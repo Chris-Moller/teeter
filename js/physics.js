@@ -46,7 +46,7 @@ export function updatePhysics(dt, tiltAngle, pitch) {
 
 function updateOnTrack(dt, tiltAngle, pitch) {
   // Direct lateral velocity from head tilt with smooth interpolation
-  const targetVx = tiltAngle * DIRECT_SENSITIVITY;
+  const targetVx = -tiltAngle * DIRECT_SENSITIVITY;
   ball.vx += (targetVx - ball.vx) * RESPONSE_RATE * dt;
 
   // Forward motion modulated by pitch (forward tilt speeds up, backward slows down)
