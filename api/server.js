@@ -25,7 +25,8 @@ function readScores() {
       .filter(e => typeof e.name === 'string' && typeof e.score === 'number')
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_SCORES);
-  } catch {
+  } catch (err) {
+    console.error('readScores: failed to read/parse scores file:', err.message);
     return [];
   }
 }
@@ -55,18 +56,32 @@ function handleGetScores(req, res) {
 function handlePostScore(req, res) {
   let body = '';
   let size = 0;
+  let aborted = false;
 
   req.on('data', (chunk) => {
     size += chunk.length;
     if (size > MAX_BODY) {
-      req.destroy();
-      sendError(res, 413, 'Request body too large');
+      if (!aborted) {
+        aborted = true;
+        req.destroy();
+        sendError(res, 413, 'Request body too large');
+      }
       return;
     }
     body += chunk;
   });
 
+  req.on('error', (err) => {
+    console.error('handlePostScore: request stream error:', err.message);
+    if (!aborted && !res.headersSent) {
+      aborted = true;
+      sendError(res, 400, 'Request error');
+    }
+  });
+
   req.on('end', () => {
+    if (aborted) return;
+
     let parsed;
     try {
       parsed = JSON.parse(body);
@@ -96,7 +111,14 @@ function handlePostScore(req, res) {
     scores.push({ name, score });
     scores.sort((a, b) => b.score - a.score);
     const top = scores.slice(0, MAX_SCORES);
-    writeScores(top);
+
+    try {
+      writeScores(top);
+    } catch (err) {
+      console.error('handlePostScore: failed to write scores:', err.message);
+      sendError(res, 500, 'Failed to persist score');
+      return;
+    }
 
     sendJSON(res, 201, top);
   });
@@ -121,7 +143,12 @@ const server = http.createServer((req, res) => {
   }
 });
 
-ensureDataDir();
+try {
+  ensureDataDir();
+} catch (err) {
+  console.error('FATAL: cannot create data directory:', DATA_DIR, err.message);
+  process.exit(1);
+}
 
 server.listen(PORT, HOST, () => {
   console.log(`API server listening on ${HOST}:${PORT}`);

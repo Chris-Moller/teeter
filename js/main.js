@@ -94,15 +94,16 @@ async function apiRequest(options, fallback) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), API_TIMEOUT);
   try {
-    const res = await fetch('/api/scores', { signal: controller.signal, ...options });
+    const res = await fetch('/api/scores', { ...options, signal: controller.signal });
     clearTimeout(timeout);
     if (!res.ok) throw new Error('API returned ' + res.status);
     const data = await res.json();
     if (!Array.isArray(data)) throw new Error('Invalid response');
     saveScores(data);
     return data;
-  } catch {
+  } catch (err) {
     clearTimeout(timeout);
+    console.warn('apiRequest: API call failed, falling back to localStorage:', err);
     return fallback();
   }
 }
@@ -149,8 +150,12 @@ async function renderLeaderboard() {
 }
 
 function showLeaderboard() {
-  renderLeaderboard();
+  leaderboardList.innerHTML = '<p class="lb-empty">Loading...</p>';
   leaderboardPanel.classList.add('visible');
+  renderLeaderboard().catch((err) => {
+    console.error('showLeaderboard: failed to render:', err);
+    leaderboardList.innerHTML = '<p class="lb-empty">Failed to load scores.</p>';
+  });
 }
 
 function hideLeaderboard() {
@@ -215,12 +220,18 @@ function exitGameOver() {
 // --- Event listeners ---
 
 nameSubmit.addEventListener('click', () => {
-  submitScore();
+  submitScore().catch((err) => {
+    console.error('submitScore failed:', err);
+    exitGameOver();
+  });
 });
 
 nameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
-    submitScore();
+    submitScore().catch((err) => {
+      console.error('submitScore failed:', err);
+      exitGameOver();
+    });
   }
 });
 
@@ -274,7 +285,9 @@ async function init() {
     await initTracker(stream);
 
     // Pre-fetch scores from API to warm up the localStorage cache
-    fetchScoresFromAPI();
+    fetchScoresFromAPI().catch((err) => {
+      console.warn('init: pre-fetch scores failed:', err);
+    });
 
     // Hide overlay, show score and leaderboard button, and start game
     overlay.classList.add('hidden');
