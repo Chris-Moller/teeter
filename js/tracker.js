@@ -55,8 +55,8 @@ export function detectTilt(timestamp) {
     const leftEye = landmarks[LEFT_EYE_OUTER];
     const rightEye = landmarks[RIGHT_EYE_OUTER];
 
-    // Negate tilt to mirror horizontal mapping (webcam is mirrored)
-    rawTilt = -Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
+    // Map head tilt directly: tilt right → positive angle → ball moves right
+    rawTilt = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
     smoothedTilt = smoothedTilt * SMOOTHING_FACTOR + rawTilt * (1 - SMOOTHING_FACTOR);
 
     // Compute pitch from the same detection result
