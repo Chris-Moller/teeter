@@ -34,6 +34,7 @@ const leaderboardClose = document.getElementById('leaderboard-close');
 const STORAGE_KEY = 'teeter_highscores';
 const MAX_SCORES = 10;
 const NON_QUALIFYING_DELAY = 2000;
+const API_TIMEOUT = 2000;
 
 let state = 'loading'; // loading | permission | playing | falling | gameover
 let lastTime = 0;
@@ -46,7 +47,7 @@ function updateScore(value) {
   scoreEl.textContent = 'Score: ' + score;
 }
 
-// --- localStorage leaderboard ---
+// --- localStorage leaderboard (fallback) ---
 
 function loadScores() {
   try {
@@ -87,10 +88,55 @@ function addScore(name, value) {
   return trimmed;
 }
 
+// --- API calls with localStorage fallback ---
+
+async function fetchScoresFromAPI() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT);
+  try {
+    const res = await fetch('/api/scores', { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error('API returned ' + res.status);
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    // Cache to localStorage
+    saveScores(data);
+    return data;
+  } catch {
+    clearTimeout(timeout);
+    // Fall back to localStorage
+    return loadScores();
+  }
+}
+
+async function submitScoreToAPI(name, value) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT);
+  try {
+    const res = await fetch('/api/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, score: value }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error('API returned ' + res.status);
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error('Invalid response');
+    // Cache to localStorage
+    saveScores(data);
+    return data;
+  } catch {
+    clearTimeout(timeout);
+    // Fall back to localStorage
+    return addScore(name, value);
+  }
+}
+
 // --- Leaderboard panel ---
 
-function renderLeaderboard() {
-  const scores = loadScores();
+async function renderLeaderboard() {
+  const scores = await fetchScoresFromAPI();
   if (scores.length === 0) {
     leaderboardList.innerHTML = '<p class="lb-empty">No scores yet.</p>';
     return;
@@ -147,10 +193,10 @@ function enterGameOver() {
   gameoverOverlay.classList.add('visible');
 }
 
-function submitScore() {
+async function submitScore() {
   let name = nameInput.value.trim();
   if (!name) name = 'Anonymous';
-  addScore(name, finalScore);
+  await submitScoreToAPI(name, finalScore);
   exitGameOver();
 }
 
@@ -237,6 +283,9 @@ async function init() {
 
     // Initialize head tracker
     await initTracker(stream);
+
+    // Pre-fetch scores from API to warm up the localStorage cache
+    fetchScoresFromAPI();
 
     // Hide overlay, show score and leaderboard button, and start game
     overlay.classList.add('hidden');
