@@ -19,6 +19,8 @@ const SMOOTHING_FACTOR = 0.7;
 
 // Calibration offset: the face X position at neutral/center
 let calibrationOffset = 0.5;
+// When true, the next valid face detection will auto-calibrate the offset
+let needsCalibration = true;
 
 export async function initTracker(stream) {
   // Create hidden video element — never added to DOM
@@ -47,7 +49,10 @@ export async function initTracker(stream) {
 }
 
 export function calibrate(timestamp) {
-  if (!faceLandmarker || !videoElement || videoElement.readyState < 2) return;
+  if (!faceLandmarker || !videoElement || videoElement.readyState < 2) {
+    needsCalibration = true;
+    return;
+  }
 
   const results = faceLandmarker.detectForVideo(videoElement, timestamp);
   if (results.faceLandmarks && results.faceLandmarks.length > 0) {
@@ -55,6 +60,9 @@ export function calibrate(timestamp) {
     const leftEye = landmarks[LEFT_EYE_OUTER];
     const rightEye = landmarks[RIGHT_EYE_OUTER];
     calibrationOffset = (leftEye.x + rightEye.x) / 2;
+    needsCalibration = false;
+  } else {
+    needsCalibration = true;
   }
 }
 
@@ -72,6 +80,13 @@ export function detectTilt(timestamp) {
 
     // Absolute horizontal face position (normalized 0..1)
     const faceX = (leftEye.x + rightEye.x) / 2;
+
+    // Auto-calibrate on first valid detection after reset/start
+    if (needsCalibration) {
+      calibrationOffset = faceX;
+      needsCalibration = false;
+    }
+
     // Mirror and subtract calibration offset so center = 0
     rawTilt = -(faceX - calibrationOffset);
     smoothedTilt = smoothedTilt * SMOOTHING_FACTOR + rawTilt * (1 - SMOOTHING_FACTOR);
@@ -95,4 +110,6 @@ export function resetTilt() {
   smoothedTilt = 0;
   rawPitch = 0;
   smoothedPitch = 0;
+  calibrationOffset = 0.5;
+  needsCalibration = true;
 }
