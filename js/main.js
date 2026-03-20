@@ -49,9 +49,12 @@ function updateScore(value) {
   scoreEl.textContent = 'Score: ' + score;
 }
 
-// --- localStorage leaderboard ---
+// --- Leaderboard with API + localStorage fallback ---
 
-function loadScores() {
+const API_TIMEOUT = 2000;
+let cachedScores = [];
+
+function loadLocalScores() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
@@ -66,7 +69,7 @@ function loadScores() {
   }
 }
 
-function saveScores(scores) {
+function saveLocalScores(scores) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
   } catch {
@@ -74,26 +77,74 @@ function saveScores(scores) {
   }
 }
 
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
+async function loadScoresAsync() {
+  try {
+    const res = await fetchWithTimeout('/api/scores');
+    if (!res.ok) throw new Error('API error ' + res.status);
+    const scores = await res.json();
+    if (Array.isArray(scores)) {
+      cachedScores = scores;
+      saveLocalScores(scores);
+      return scores;
+    }
+  } catch {
+    // API unavailable — fall back to localStorage
+  }
+  const local = loadLocalScores();
+  cachedScores = local;
+  return local;
+}
+
+async function addScoreAsync(name, value) {
+  try {
+    const res = await fetchWithTimeout('/api/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, score: value }),
+    });
+    if (!res.ok) throw new Error('API error ' + res.status);
+    const scores = await res.json();
+    if (Array.isArray(scores)) {
+      cachedScores = scores;
+      saveLocalScores(scores);
+      return scores;
+    }
+  } catch {
+    // API unavailable — fall back to localStorage
+  }
+  const scores = loadLocalScores();
+  scores.push({ name, score: value });
+  scores.sort((a, b) => b.score - a.score);
+  const trimmed = scores.slice(0, MAX_SCORES);
+  saveLocalScores(trimmed);
+  cachedScores = trimmed;
+  return trimmed;
+}
+
 function scoreQualifies(value) {
   if (value <= 0) return false;
-  const scores = loadScores();
+  const scores = cachedScores.length ? cachedScores : loadLocalScores();
   if (scores.length < MAX_SCORES) return true;
   return value > scores[scores.length - 1].score;
 }
 
-function addScore(name, value) {
-  const scores = loadScores();
-  scores.push({ name, score: value });
-  scores.sort((a, b) => b.score - a.score);
-  const trimmed = scores.slice(0, MAX_SCORES);
-  saveScores(trimmed);
-  return trimmed;
-}
-
 // --- Leaderboard panel ---
 
-function renderLeaderboard() {
-  const scores = loadScores();
+async function renderLeaderboard() {
+  const scores = await loadScoresAsync();
   if (scores.length === 0) {
     leaderboardList.innerHTML = '<p class="lb-empty">No scores yet.</p>';
     return;
@@ -116,9 +167,9 @@ function renderLeaderboard() {
   leaderboardList.innerHTML = html;
 }
 
-function showLeaderboard() {
-  renderLeaderboard();
+async function showLeaderboard() {
   leaderboardPanel.classList.add('visible');
+  await renderLeaderboard();
 }
 
 function hideLeaderboard() {
@@ -150,10 +201,12 @@ function enterGameOver() {
   gameoverOverlay.classList.add('visible');
 }
 
-function submitScore() {
+async function submitScore() {
   let name = nameInput.value.trim();
   if (!name) name = 'Anonymous';
-  addScore(name, finalScore);
+  nameSubmit.disabled = true;
+  await addScoreAsync(name, finalScore);
+  nameSubmit.disabled = false;
   exitGameOver();
 }
 
@@ -247,6 +300,9 @@ async function init() {
 
     // Calibrate neutral head position
     calibrate(performance.now());
+
+    // Pre-load scores so cachedScores is available for scoreQualifies
+    loadScoresAsync().catch(() => {});
 
     // Hide overlay, show score and leaderboard button, and start game
     overlay.classList.add('hidden');
