@@ -1,119 +1,172 @@
-# Plan: Create Leaderboard with Persistent High Scores
+# Plan: Shared Global Leaderboard
 
 ## Overview
 
-Add a persistent leaderboard system using browser localStorage. Introduce a `gameover` state to the existing state machine that intercepts the automatic reset flow when the ball falls. Display game-over UI with optional name entry for top-10 scores, and a leaderboard view accessible at any time.
+Replace the current localStorage-only leaderboard with a shared global leaderboard backed by a lightweight API server. All players will see and compete against the same set of high scores. The frontend retains localStorage as a fallback for offline/error scenarios.
 
 ## Codebase Analysis
 
 - **Tech stack**: Pure static HTML+JS (ES modules), Three.js v0.183.2 via CDN importmap, served by nginx in Docker
-- **State machine** (`main.js`): `loading | permission | playing | falling` → adding `gameover`
-- **Reset flow** (`main.js:121-138`): On `result.needsReset && state === 'falling'`, a 500ms `setTimeout` regenerates the level, resets physics, resets score, and sets state to `playing`
-- **Score tracking**: `score` variable in `main.js`, displayed via `#score` div
-- **Overlay system**: `#overlay` div with `.title`/`.subtitle`, toggled via `.hidden` class
-- **No existing localStorage usage**
+- **State machine** (`main.js`): `loading | permission | playing | falling | gameover`
+- **Current leaderboard**: localStorage-only, functions `loadScores()`, `saveScores()`, `scoreQualifies()`, `addScore()` in `main.js`
+- **UI**: Game-over overlay with name entry, leaderboard panel — all already implemented
+- **Docker**: `nginx:alpine` image, port 8080, static file serving only
 
 ## Architecture
 
+### Backend: Node.js API Server (Zero Dependencies)
+
+A small Node.js HTTP server using only built-in `http` and `fs` modules. No npm, no package.json, no node_modules. The server:
+
+- Listens on `localhost:3001` (internal only, not exposed)
+- Stores scores in `/data/scores.json` (persistent across container restarts if `/data` is a volume)
+- Provides two endpoints:
+  - `GET /api/scores` — Returns top 10 scores as JSON array
+  - `POST /api/scores` — Accepts `{ "name": "string", "score": number }`, validates, saves, returns updated top 10
+
+**Server-side validation:**
+- `score` must be a positive integer (> 0, integer, ≤ 999999)
+- `name` must be a non-empty string, trimmed, max 15 characters
+- Empty/whitespace-only name defaults to "Anonymous"
+- Request body must be valid JSON, max 1KB
+
+**Why Node.js over alternatives:**
+- `apk add nodejs` is ~12MB on Alpine — small footprint
+- No package manager or build step needed — just a single `.js` file
+- Built-in `http` and `fs` modules cover all requirements
+- Easy to understand and maintain
+
+### Nginx Proxy Configuration
+
+Nginx reverse-proxies `/api/` requests to the Node.js backend:
+
+```nginx
+location /api/ {
+    proxy_pass http://127.0.0.1:3001;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+```
+
+All other requests continue to serve static files as before.
+
+### Docker Changes
+
+**Dockerfile:**
+- Base: `nginx:alpine` (unchanged)
+- Add `apk add --no-cache nodejs` to install Node.js
+- Copy `api/server.js` into the container
+- Copy `start.sh` as the entrypoint (starts both nginx and the API server)
+- Expose port 8080 (unchanged)
+
+**start.sh:**
+```sh
+#!/bin/sh
+mkdir -p /data
+node /app/api/server.js &
+nginx -g 'daemon off;'
+```
+
+### Frontend Changes (`js/main.js`)
+
+Replace direct localStorage calls with async API calls + localStorage fallback:
+
+1. **`loadScores()` → `loadScoresAsync()`**: Fetches `GET /api/scores`. On failure (network error, timeout, non-200), falls back to localStorage.
+
+2. **`addScore()` → `addScoreAsync()`**: POSTs to `/api/scores`. On success, also saves to localStorage as cache. On failure, saves to localStorage only.
+
+3. **`scoreQualifies()`**: Uses cached scores from the last `loadScoresAsync()` call or localStorage. This function remains synchronous for UI responsiveness.
+
+4. **`renderLeaderboard()`**: Calls `loadScoresAsync()` then renders.
+
+5. **`submitScore()`**: Calls `addScoreAsync()` then exits game over.
+
+**Timeout**: API calls have a 2-second timeout via `AbortController` to ensure the game remains responsive.
+
+**Flow:**
+```
+Score submit → POST /api/scores
+               ├─ Success → Save to localStorage as cache → Exit game over
+               └─ Failure → Save to localStorage only → Exit game over
+
+Leaderboard open → GET /api/scores
+                   ├─ Success → Render + cache to localStorage
+                   └─ Failure → Render from localStorage
+```
+
+### Files to Create
+
+1. **`api/server.js`** — Node.js API server (~100 lines)
+2. **`start.sh`** — Docker entrypoint script
+
 ### Files to Modify
 
-1. **`index.html`** — Add game-over overlay, name entry form, leaderboard panel, and leaderboard button. Add associated CSS styles.
-2. **`js/main.js`** — Add `gameover` state to state machine, localStorage read/write logic, wire up UI interactions.
+1. **`js/main.js`** — Replace sync localStorage calls with async API calls + fallback
+2. **`nginx.conf`** — Add `/api/` proxy_pass block
+3. **`Dockerfile`** — Add nodejs install, copy new files, change entrypoint
+4. **`index.html`** — No changes needed (UI already exists)
 
 ### Files NOT Modified
 
 - `js/renderer.js` — No changes needed
 - `js/physics.js` — No changes needed
-- `js/tracker.js` — No changes needed (DO NOT MODIFY per conventions)
+- `js/tracker.js` — No changes needed (DO NOT MODIFY)
 
-### State Machine Change
+## API Specification
 
-Current flow:
-```
-playing → falling → [500ms timeout] → playing
-```
+### GET /api/scores
 
-New flow:
-```
-playing → falling → [ball falls off screen] → gameover → [name entry or brief display] → playing
-```
-
-The `gameover` state replaces the immediate 500ms reset timer. Instead of scheduling a reset in the `falling` state, when `result.needsReset` is true, transition to `gameover` and show the game-over UI.
-
-### localStorage Schema
-
-Key: `teeter_highscores`
-
-Value (JSON string):
+**Response:** `200 OK`
 ```json
 [
-  { "name": "AAA", "score": 42 },
-  { "name": "BBB", "score": 35 },
-  ...
+  { "name": "Alice", "score": 42 },
+  { "name": "Bob", "score": 35 }
 ]
 ```
 
-Array of up to 10 entries, sorted by score descending. Read/written via `JSON.parse`/`JSON.stringify`.
+Array of up to 10 entries, sorted by score descending.
 
-### UI Components
+### POST /api/scores
 
-#### 1. Game Over Overlay (`#gameover-overlay`)
-- Centered overlay (similar to existing `#overlay` styling)
-- Shows "GAME OVER" title and final score
-- If score qualifies for top 10: shows name entry input (maxlength=15) + submit button
-- If score does not qualify: shows message briefly, then auto-resets after ~2 seconds
-- `pointer-events: auto` so user can interact with the form
+**Request:**
+```json
+{ "name": "Alice", "score": 42 }
+```
 
-#### 2. Leaderboard Panel (`#leaderboard-panel`)
-- Full-screen or large centered panel overlay
-- Shows ranked list: #, Name, Score
-- Close button to dismiss
-- Accessible via a leaderboard button in the UI
+**Response:** `201 Created`
+```json
+[
+  { "name": "Alice", "score": 42 },
+  { "name": "Bob", "score": 35 }
+]
+```
 
-#### 3. Leaderboard Button (`#leaderboard-btn`)
-- Fixed position button (top-right corner)
-- Always visible during `playing` state
-- Simple text label (e.g., "Leaderboard") — no emoji assets needed
-- Opens the leaderboard panel when clicked
+Returns updated top 10 scores.
 
-### Key Implementation Details
-
-1. **Score qualification check**: Compare current score against the 10th entry in the sorted array (or check if fewer than 10 entries). Score of 0 does NOT qualify.
-
-2. **Name input**: HTML `<input>` with `maxlength="15"`, submit on Enter key or button click. Trim whitespace. Default to "Anonymous" if empty.
-
-3. **Game-over flow**:
-   - Qualifying score: Show name entry, wait for submit, save to localStorage, then reset
-   - Non-qualifying score: Show "GAME OVER" with final score for ~2 seconds, then auto-reset
-
-4. **Reset after game-over**: Same reset logic as current (regenerateLevel, initPhysics, resetTilt, etc.), triggered from the game-over flow completion.
-
-5. **Leaderboard during gameplay**: Button in top-right, clicking opens the leaderboard overlay. Close button dismisses it. Game continues underneath.
-
-6. **localStorage error handling**: Wrap read/write in try/catch to handle private browsing or full storage gracefully. If localStorage is unavailable, game-over flow still works — just no persistence.
-
-### Conventions to Follow
-
-- 2-space indent, single quotes, const/let (no var)
-- camelCase functions, UPPER_CASE constants
-- ES module imports
-- Match existing overlay styling (font-family: -apple-system, etc., white text on dark backgrounds)
-- No new dependencies — pure DOM manipulation
-- No npm/node — static JS only
-
-### Gotchas
-
-- The existing `#overlay` has `pointer-events: none` — the new game-over overlay needs `pointer-events: auto` for the input/button to be interactive
-- Must hide the game-over overlay before resetting to `playing` state
-- The existing reset flow uses a `setTimeout` with a `resetTimer` guard — the new `gameover` state replaces this pattern entirely for the reset case
-- The `score` variable must be captured at the moment of entering `gameover` state (before reset clears it)
-- The leaderboard button should have `z-index` above the Three.js canvas but below overlays
-- The game loop continues running during `gameover` state but should skip physics updates (game is paused)
+**Error responses:**
+- `400 Bad Request` — Invalid input (missing/invalid name or score)
+- `413 Payload Too Large` — Request body exceeds 1KB
+- `405 Method Not Allowed` — Wrong HTTP method
 
 ## Scope Assessment: Single Agent
 
-All changes are tightly coupled between `index.html` (UI) and `js/main.js` (logic). No parallel decomposition is beneficial — the UI and logic must be developed together.
+This is a single-agent task because:
+- Backend and frontend changes are tightly coupled (API contract must match)
+- Docker/nginx changes must be tested together with both components
+- Total scope is ~5 files, ~200 lines of new code
+- No genuinely independent modules that benefit from parallel work
+
+## Key Gotchas
+
+1. **Async flow in game over**: `submitScore()` becomes async. Must handle the case where the POST is slow — show some indication or just fire-and-forget.
+2. **CORS**: Not needed since frontend and API are on the same origin (nginx proxies both).
+3. **Concurrent writes**: The JSON file could have race conditions with concurrent POSTs. Use a simple in-memory array with periodic file flush, or read-modify-write with a lock. For this scale, read-modify-write is fine.
+4. **Docker entrypoint**: Must ensure Node.js process stays running. Use `&` for backgrounding and make nginx the foreground process.
+5. **Score file initialization**: If `/data/scores.json` doesn't exist, start with an empty array.
+6. **Frontend backward compatibility**: The `scoreQualifies()` check happens synchronously in `enterGameOver()`. We can use the most recently cached scores for this check and it will be accurate enough.
 
 ## Sources
 
-No external libraries needed. Uses standard browser APIs: `localStorage`, DOM manipulation. All patterns already exist in the codebase (overlays, event listeners, state machine).
+- Node.js built-in `http` module: https://nodejs.org/api/http.html
+- Node.js built-in `fs` module: https://nodejs.org/api/fs.html
+- nginx proxy_pass: https://nginx.org/en/docs/http/ngx_http_proxy_module.html
