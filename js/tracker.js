@@ -6,10 +6,16 @@ const MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmark
 const LEFT_EYE_OUTER = 33;
 const RIGHT_EYE_OUTER = 263;
 
+// Landmark indices for pitch detection
+const NOSE_TIP = 1;
+const FOREHEAD = 10;
+
 let faceLandmarker = null;
 let videoElement = null;
 let rawTilt = 0;
 let smoothedTilt = 0;
+let rawPitch = 0;
+let smoothedPitch = 0;
 const SMOOTHING_FACTOR = 0.7;
 
 export async function initTracker(stream) {
@@ -50,14 +56,27 @@ export function detectTilt(timestamp) {
     const leftEye = landmarks[LEFT_EYE_OUTER];
     const rightEye = landmarks[RIGHT_EYE_OUTER];
 
-    rawTilt = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
+    // Negate tilt to mirror horizontal mapping (webcam is mirrored)
+    rawTilt = -Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
     smoothedTilt = smoothedTilt * SMOOTHING_FACTOR + rawTilt * (1 - SMOOTHING_FACTOR);
+
+    // Pitch detection: nose below forehead means tilting forward (positive pitch)
+    const nose = landmarks[NOSE_TIP];
+    const forehead = landmarks[FOREHEAD];
+    rawPitch = Math.atan2(nose.y - forehead.y, nose.z - forehead.z) - Math.PI / 2;
+    smoothedPitch = smoothedPitch * SMOOTHING_FACTOR + rawPitch * (1 - SMOOTHING_FACTOR);
   }
 
   return smoothedTilt;
 }
 
+export function detectPitch() {
+  return smoothedPitch;
+}
+
 export function resetTilt() {
   rawTilt = 0;
   smoothedTilt = 0;
+  rawPitch = 0;
+  smoothedPitch = 0;
 }
