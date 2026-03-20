@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const TRACK_WIDTH = 3;
+const TRACK_WIDTH = 4.5;
 const TRACK_HEIGHT = 0.2;
 const TRACK_LENGTH = 50;
 const BALL_RADIUS = 0.3;
@@ -9,6 +9,22 @@ const BALL_START_Z = -20;
 let scene, camera, renderer;
 let trackMesh, ballMesh;
 let edgeLeft, edgeRight;
+let obstacleMeshes = [];
+let obstacleData = [];
+let coinMeshes = [];
+let coinData = [];
+
+// Simple seeded PRNG (mulberry32)
+function seededRandom(seed) {
+  let s = seed;
+  return function () {
+    s |= 0;
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 export function initRenderer() {
   scene = new THREE.Scene();
@@ -80,10 +96,96 @@ export function initRenderer() {
   ballMesh.position.set(0, TRACK_HEIGHT / 2 + BALL_RADIUS, BALL_START_Z);
   scene.add(ballMesh);
 
+  // Generate obstacles and coins
+  generateObstacles();
+  generateCoins();
+
   // Handle resize
   window.addEventListener('resize', onResize);
 
   return { scene, camera, renderer };
+}
+
+function generateObstacles() {
+  const rand = seededRandom(42);
+  const obstacleMat = new THREE.MeshStandardMaterial({
+    color: 0xcc2222,
+    roughness: 0.5,
+    metalness: 0.2,
+  });
+  const obstacleGeo = new THREE.BoxGeometry(1.5, 1.0, 0.4);
+
+  const halfLength = TRACK_LENGTH / 2;
+  const safeZ = BALL_START_Z + 5;
+  let z = safeZ;
+
+  while (z < halfLength) {
+    z += 7 + rand() * 2; // every 7-9 Z units
+    if (z >= halfLength) break;
+
+    const lateralRange = TRACK_WIDTH / 2 - 0.75;
+    const x = (rand() * 2 - 1) * lateralRange;
+
+    const mesh = new THREE.Mesh(obstacleGeo, obstacleMat);
+    mesh.position.set(x, TRACK_HEIGHT / 2 + 0.5, z);
+    mesh.castShadow = true;
+    scene.add(mesh);
+
+    obstacleMeshes.push(mesh);
+    obstacleData.push({ x, z, halfWidth: 0.75, halfDepth: 0.2 });
+  }
+}
+
+function generateCoins() {
+  const rand = seededRandom(123);
+  const coinMat = new THREE.MeshStandardMaterial({
+    color: 0xffd700,
+    metalness: 0.8,
+    roughness: 0.2,
+  });
+  const coinGeo = new THREE.TorusGeometry(0.25, 0.08, 8, 16);
+
+  // Place 2-3 coins between each pair of obstacles
+  const sortedObs = [...obstacleData].sort((a, b) => a.z - b.z);
+
+  // Before first obstacle
+  const safeZ = BALL_START_Z + 5;
+  const firstObsZ = sortedObs.length > 0 ? sortedObs[0].z : TRACK_LENGTH / 2;
+  placeCoinsInRange(safeZ, firstObsZ, rand, coinGeo, coinMat);
+
+  // Between consecutive obstacles
+  for (let i = 0; i < sortedObs.length - 1; i++) {
+    placeCoinsInRange(sortedObs[i].z + 1, sortedObs[i + 1].z - 1, rand, coinGeo, coinMat);
+  }
+
+  // After last obstacle
+  if (sortedObs.length > 0) {
+    const lastObsZ = sortedObs[sortedObs.length - 1].z;
+    placeCoinsInRange(lastObsZ + 1, TRACK_LENGTH / 2, rand, coinGeo, coinMat);
+  }
+}
+
+function placeCoinsInRange(zStart, zEnd, rand, geo, mat) {
+  const gap = zEnd - zStart;
+  if (gap < 2) return;
+
+  const count = gap >= 5 ? 3 : 2;
+  const step = gap / (count + 1);
+
+  for (let i = 1; i <= count; i++) {
+    const z = zStart + step * i;
+    const lateralRange = TRACK_WIDTH / 2 - 0.5;
+    const x = (rand() * 2 - 1) * lateralRange;
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.set(x, TRACK_HEIGHT / 2 + 0.5, z);
+    mesh.castShadow = true;
+    scene.add(mesh);
+
+    coinMeshes.push(mesh);
+    coinData.push({ x, z });
+  }
 }
 
 function onResize() {
@@ -124,4 +226,30 @@ export function getTrackConfig() {
     ballRadius: BALL_RADIUS,
     ballStartZ: BALL_START_Z,
   };
+}
+
+export function getObstacles() {
+  return obstacleData;
+}
+
+export function getCoins() {
+  return coinData;
+}
+
+export function hideCoin(index) {
+  coinMeshes[index].visible = false;
+}
+
+export function showAllCoins() {
+  for (let i = 0; i < coinMeshes.length; i++) {
+    coinMeshes[i].visible = true;
+  }
+}
+
+export function updateCoinRotation(dt) {
+  for (let i = 0; i < coinMeshes.length; i++) {
+    if (coinMeshes[i].visible) {
+      coinMeshes[i].rotation.y += 2.0 * dt;
+    }
+  }
 }
