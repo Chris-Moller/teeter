@@ -83,16 +83,13 @@ function handlePostScore(req, res) {
     }
 
     // Validate name
-    let name = parsed.name;
-    if (name === undefined || name === null || (typeof name === 'string' && name.trim() === '')) {
-      name = 'Anonymous';
-    }
-    if (typeof name !== 'string') {
+    if (parsed.name != null && typeof parsed.name !== 'string') {
       sendError(res, 400, 'Name must be a string');
       return;
     }
-    name = name.trim().slice(0, 15);
-    if (name === '') name = 'Anonymous';
+    const name = (typeof parsed.name === 'string' && parsed.name.trim())
+      ? parsed.name.trim().slice(0, 15)
+      : 'Anonymous';
 
     // Add score
     const scores = readScores();

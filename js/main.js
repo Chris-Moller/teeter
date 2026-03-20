@@ -90,47 +90,36 @@ function addScore(name, value) {
 
 // --- API calls with localStorage fallback ---
 
-async function fetchScoresFromAPI() {
+async function apiRequest(options, fallback) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), API_TIMEOUT);
   try {
-    const res = await fetch('/api/scores', { signal: controller.signal });
+    const res = await fetch('/api/scores', { signal: controller.signal, ...options });
     clearTimeout(timeout);
     if (!res.ok) throw new Error('API returned ' + res.status);
     const data = await res.json();
     if (!Array.isArray(data)) throw new Error('Invalid response');
-    // Cache to localStorage
     saveScores(data);
     return data;
   } catch {
     clearTimeout(timeout);
-    // Fall back to localStorage
-    return loadScores();
+    return fallback();
   }
 }
 
-async function submitScoreToAPI(name, value) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT);
-  try {
-    const res = await fetch('/api/scores', {
+function fetchScoresFromAPI() {
+  return apiRequest({}, loadScores);
+}
+
+function submitScoreToAPI(name, value) {
+  return apiRequest(
+    {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, score: value }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error('API returned ' + res.status);
-    const data = await res.json();
-    if (!Array.isArray(data)) throw new Error('Invalid response');
-    // Cache to localStorage
-    saveScores(data);
-    return data;
-  } catch {
-    clearTimeout(timeout);
-    // Fall back to localStorage
-    return addScore(name, value);
-  }
+    },
+    () => addScore(name, value),
+  );
 }
 
 // --- Leaderboard panel ---
