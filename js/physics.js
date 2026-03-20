@@ -139,6 +139,12 @@ function updateFalling(dt) {
   };
 }
 
+export function updateLevel(newObstacles, newCoins) {
+  obstacles = newObstacles;
+  coins = newCoins;
+  coinsCollected = new Array(coins.length).fill(false);
+}
+
 export function getBallState() {
   return { ...ball };
 }

@@ -9,12 +9,12 @@ import {
   getObstacles,
   getCoins,
   hideCoin,
-  showAllCoins,
+  regenerateLevel,
   updateCoinRotation,
 } from './renderer.js';
 
 import { initTracker, detectTilt, detectPitch, resetTilt } from './tracker.js';
-import { initPhysics, updatePhysics, resetBall } from './physics.js';
+import { initPhysics, updatePhysics, resetBall, updateLevel } from './physics.js';
 
 const overlay = document.getElementById('overlay');
 const subtitle = overlay.querySelector('.subtitle');
@@ -123,7 +123,8 @@ function gameLoop(timestamp) {
           resetBall();
           resetTilt();
           resetBallRotation();
-          showAllCoins();
+          const level = regenerateLevel();
+          updateLevel(level.obstacles, level.coins);
           updateScore(0);
           const config = getTrackConfig();
           updateBallPosition(0, config.trackHeight / 2 + config.ballRadius, config.ballStartZ);

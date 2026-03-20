@@ -28,6 +28,7 @@ let obstacleMeshes = [];
 let obstacleData = []; // { x, z, halfW, halfD }
 let coinMeshes = [];
 let coinData = []; // { x, z }
+let obstGeo, obstMat, coinGeo, coinMat;
 
 // Simple seeded RNG for deterministic placement
 function seededRandom(seed) {
@@ -173,43 +174,24 @@ export function initRenderer() {
   ballMesh.position.set(0, TRACK_HEIGHT / 2 + BALL_RADIUS, BALL_START_Z);
   scene.add(ballMesh);
 
-  // Generate obstacles and coins
-  const rng = seededRandom(42);
-  obstacleData = generateObstacles(rng);
-  coinData = generateCoins(rng, obstacleData);
-
-  // Create obstacle meshes
-  const obstGeo = new THREE.BoxGeometry(OBSTACLE_WIDTH, OBSTACLE_HEIGHT, OBSTACLE_DEPTH);
-  const obstMat = new THREE.MeshStandardMaterial({
+  // Create shared geometry/material for obstacles and coins (reused across regenerations)
+  obstGeo = new THREE.BoxGeometry(OBSTACLE_WIDTH, OBSTACLE_HEIGHT, OBSTACLE_DEPTH);
+  obstMat = new THREE.MeshStandardMaterial({
     color: 0x8B2222,
     roughness: 0.5,
     metalness: 0.2,
   });
-  obstacleMeshes = obstacleData.map((o) => {
-    const mesh = new THREE.Mesh(obstGeo, obstMat);
-    mesh.position.set(o.x, TRACK_HEIGHT / 2 + OBSTACLE_HEIGHT / 2, o.z);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    return mesh;
-  });
-
-  // Create coin meshes
-  const coinGeo = new THREE.TorusGeometry(COIN_RADIUS, COIN_TUBE, 12, 24);
-  const coinMat = new THREE.MeshStandardMaterial({
+  coinGeo = new THREE.TorusGeometry(COIN_RADIUS, COIN_TUBE, 12, 24);
+  coinMat = new THREE.MeshStandardMaterial({
     color: 0xFFD700,
     metalness: 0.8,
     roughness: 0.2,
     emissive: 0x554400,
     emissiveIntensity: 0.3,
   });
-  coinMeshes = coinData.map((c) => {
-    const mesh = new THREE.Mesh(coinGeo, coinMat);
-    mesh.position.set(c.x, COIN_Y, c.z);
-    mesh.rotation.x = Math.PI / 2; // Face upright initially
-    scene.add(mesh);
-    return mesh;
-  });
+
+  // Generate initial level layout
+  regenerateLevel();
 
   // Handle resize
   window.addEventListener('resize', onResize);
@@ -221,6 +203,44 @@ function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+export function regenerateLevel() {
+  // Remove existing meshes from scene
+  obstacleMeshes.forEach((m) => scene.remove(m));
+  coinMeshes.forEach((m) => scene.remove(m));
+
+  // Clear arrays
+  obstacleMeshes = [];
+  obstacleData = [];
+  coinMeshes = [];
+  coinData = [];
+
+  // Fresh RNG with dynamic seed
+  const rng = seededRandom(Date.now());
+  obstacleData = generateObstacles(rng);
+  coinData = generateCoins(rng, obstacleData);
+
+  // Create obstacle meshes
+  obstacleMeshes = obstacleData.map((o) => {
+    const mesh = new THREE.Mesh(obstGeo, obstMat);
+    mesh.position.set(o.x, TRACK_HEIGHT / 2 + OBSTACLE_HEIGHT / 2, o.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  });
+
+  // Create coin meshes
+  coinMeshes = coinData.map((c) => {
+    const mesh = new THREE.Mesh(coinGeo, coinMat);
+    mesh.position.set(c.x, COIN_Y, c.z);
+    mesh.rotation.x = Math.PI / 2;
+    scene.add(mesh);
+    return mesh;
+  });
+
+  return { obstacles: getObstacles(), coins: getCoins() };
 }
 
 export function updateBallPosition(x, y, z) {
