@@ -6,18 +6,28 @@ const PITCH_SENSITIVITY = 3.0;
 const MAX_SPEED = 6.0;
 const MAX_DT = 1 / 30; // Cap delta time to prevent physics explosions
 const COIN_COLLECT_RADIUS = 0.8;
+const SLOWDOWN_DURATION = 4;
+const TURTLE_COLLECT_RADIUS = 0.8;
 
 let ball = {};
 let trackConfig = {};
 let obstacles = [];
 let coins = [];
 let coinsCollected = [];
+let turtle = null;
+let turtleCollected = false;
+let slowdownActive = false;
+let slowdownTimer = 0;
 
 export function initPhysics(config) {
   trackConfig = config;
   obstacles = config.obstacles || [];
   coins = config.coins || [];
   coinsCollected = new Array(coins.length).fill(false);
+  turtle = config.turtle || null;
+  turtleCollected = false;
+  slowdownActive = false;
+  slowdownTimer = 0;
   resetBall();
 }
 
@@ -32,6 +42,9 @@ export function resetBall() {
     falling: false,
   };
   coinsCollected = new Array(coins.length).fill(false);
+  turtleCollected = false;
+  slowdownActive = false;
+  slowdownTimer = 0;
 }
 
 export function updatePhysics(dt, tiltAngle, pitch) {
@@ -49,9 +62,20 @@ function updateOnTrack(dt, tiltAngle, pitch) {
   const targetVx = tiltAngle * DIRECT_SENSITIVITY;
   ball.vx += (targetVx - ball.vx) * RESPONSE_RATE * dt;
 
+  // Decrement slowdown timer before velocity calculation
+  if (slowdownActive) {
+    slowdownTimer -= dt;
+    if (slowdownTimer <= 0) {
+      slowdownActive = false;
+      slowdownTimer = 0;
+    }
+  }
+
   // Forward motion modulated by pitch (forward tilt speeds up, backward slows down)
   const pitchVal = pitch || 0;
-  ball.vz = Math.max(0, Math.min(MAX_SPEED, FORWARD_SPEED * (1 + pitchVal * PITCH_SENSITIVITY)));
+  const effectiveForward = slowdownActive ? FORWARD_SPEED / 2 : FORWARD_SPEED;
+  const effectiveMax = slowdownActive ? MAX_SPEED / 2 : MAX_SPEED;
+  ball.vz = Math.max(0, Math.min(effectiveMax, effectiveForward * (1 + pitchVal * PITCH_SENSITIVITY)));
 
   // Update position
   ball.x += ball.vx * dt;
@@ -97,6 +121,20 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     }
   }
 
+  // Turtle collection — distance check in XZ plane
+  let turtleJustCollected = false;
+  if (turtle && !turtleCollected) {
+    const tdx = ball.x - turtle.x;
+    const tdz = ball.z - turtle.z;
+    const tDist = Math.sqrt(tdx * tdx + tdz * tdz);
+    if (tDist < TURTLE_COLLECT_RADIUS) {
+      turtleCollected = true;
+      turtleJustCollected = true;
+      slowdownActive = true;
+      slowdownTimer = SLOWDOWN_DURATION;
+    }
+  }
+
   // Track end — wrap back to start if ball reaches the end
   const halfLength = trackConfig.trackLength / 2;
   if (ball.z > halfLength) {
@@ -113,6 +151,9 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     needsReset: false,
     obstacleHit,
     coinsCollected: newlyCollected,
+    turtleCollected: turtleJustCollected,
+    slowdownActive,
+    slowdownTimer,
   };
 }
 
@@ -136,6 +177,9 @@ function updateFalling(dt) {
     needsReset,
     obstacleHit: false,
     coinsCollected: [],
+    turtleCollected: false,
+    slowdownActive,
+    slowdownTimer,
   };
 }
 

@@ -12,6 +12,8 @@ import {
   showAllCoins,
   updateCoinRotation,
   regenerateLevel,
+  getTurtle,
+  hideTurtle,
 } from './renderer.js';
 
 import { initTracker, detectTilt, detectPitch, resetTilt } from './tracker.js';
@@ -30,6 +32,7 @@ const nameSubmit = document.getElementById('name-submit');
 const leaderboardPanel = document.getElementById('leaderboard-panel');
 const leaderboardList = document.getElementById('leaderboard-list');
 const leaderboardClose = document.getElementById('leaderboard-close');
+const slowdownIndicator = document.getElementById('slowdown-indicator');
 
 const STORAGE_KEY = 'teeter_highscores';
 const MAX_SCORES = 10;
@@ -168,7 +171,9 @@ function exitGameOver() {
   const config = getTrackConfig();
   config.obstacles = getObstacles();
   config.coins = getCoins();
+  config.turtle = getTurtle();
   initPhysics(config);
+  slowdownIndicator.classList.remove('visible');
   resetTilt();
   resetBallRotation();
   updateScore(0);
@@ -212,9 +217,10 @@ async function init() {
     initRenderer();
     const config = getTrackConfig();
 
-    // Attach obstacle and coin data to config for physics
+    // Attach obstacle, coin, and turtle data to config for physics
     config.obstacles = getObstacles();
     config.coins = getCoins();
+    config.turtle = getTurtle();
     initPhysics(config);
 
     // Initial render so the scene is visible during loading
@@ -287,6 +293,18 @@ function gameLoop(timestamp) {
         hideCoin(idx);
         updateScore(score + 1);
       }
+    }
+
+    // Handle turtle collection
+    if (result.turtleCollected) {
+      hideTurtle();
+    }
+
+    // Update slowdown indicator
+    if (result.slowdownActive) {
+      slowdownIndicator.classList.add('visible');
+    } else {
+      slowdownIndicator.classList.remove('visible');
     }
 
     // Handle state transitions

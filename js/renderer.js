@@ -28,6 +28,8 @@ let obstacleMeshes = [];
 let obstacleData = []; // { x, z, halfW, halfD }
 let coinMeshes = [];
 let coinData = []; // { x, z }
+let turtleMesh = null;
+let turtleData = null;
 
 // Simple seeded RNG for deterministic placement
 function seededRandom(seed) {
@@ -103,6 +105,71 @@ function generateCoins(rng, obstacles) {
   return coins;
 }
 
+function createTurtleMesh() {
+  const group = new THREE.Group();
+
+  // Body
+  const bodyGeo = new THREE.SphereGeometry(0.35, 16, 12);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x228B22, roughness: 0.5, metalness: 0.2 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.scale.set(1, 0.5, 1.2);
+  body.castShadow = true;
+  group.add(body);
+
+  // Shell top
+  const shellGeo = new THREE.SphereGeometry(0.38, 16, 12);
+  const shellMat = new THREE.MeshStandardMaterial({ color: 0x145214, roughness: 0.4, metalness: 0.2 });
+  const shell = new THREE.Mesh(shellGeo, shellMat);
+  shell.scale.set(1, 0.35, 1.1);
+  shell.position.y = 0.05;
+  shell.castShadow = true;
+  group.add(shell);
+
+  // Head
+  const headGeo = new THREE.SphereGeometry(0.12, 10, 8);
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x2E8B2E, roughness: 0.5, metalness: 0.1 });
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.set(0, 0.05, 0.4);
+  head.castShadow = true;
+  group.add(head);
+
+  // 4 Legs
+  const legGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.12, 8);
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x2E8B2E, roughness: 0.5, metalness: 0.1 });
+  const legPositions = [
+    { x: 0.2, z: 0.2, rotZ: -0.3 },
+    { x: -0.2, z: 0.2, rotZ: 0.3 },
+    { x: 0.2, z: -0.2, rotZ: -0.3 },
+    { x: -0.2, z: -0.2, rotZ: 0.3 },
+  ];
+  for (const lp of legPositions) {
+    const leg = new THREE.Mesh(legGeo, legMat);
+    leg.position.set(lp.x, -0.1, lp.z);
+    leg.rotation.z = lp.rotZ;
+    leg.castShadow = true;
+    group.add(leg);
+  }
+
+  return group;
+}
+
+function generateTurtle(rng, obstacles) {
+  const halfTrack = TRACK_WIDTH / 2;
+  const halfLength = TRACK_LENGTH / 2;
+  let z, valid;
+  for (let attempts = 0; attempts < 20; attempts++) {
+    z = SAFE_ZONE_Z + 5 + rng() * (halfLength - SAFE_ZONE_Z - 8);
+    valid = true;
+    for (const o of obstacles) {
+      if (Math.abs(z - o.z) < 3) { valid = false; break; }
+    }
+    if (valid) break;
+  }
+  if (!valid) z = SAFE_ZONE_Z + 5;
+  const x = (rng() * 2 - 1) * (halfTrack - 0.5);
+  return { x, z };
+}
+
 // Shared geometry and materials for obstacles and coins
 const obstGeo = new THREE.BoxGeometry(OBSTACLE_WIDTH, OBSTACLE_HEIGHT, OBSTACLE_DEPTH);
 const obstMat = new THREE.MeshStandardMaterial({
@@ -140,6 +207,11 @@ function generateLevel() {
     scene.add(mesh);
     return mesh;
   });
+
+  turtleData = generateTurtle(rng, obstacleData);
+  turtleMesh = createTurtleMesh();
+  turtleMesh.position.set(turtleData.x, COIN_Y, turtleData.z);
+  scene.add(turtleMesh);
 }
 
 export function regenerateLevel() {
@@ -156,6 +228,13 @@ export function regenerateLevel() {
   }
   coinMeshes = [];
   coinData = [];
+
+  // Remove old turtle mesh from scene
+  if (turtleMesh) {
+    scene.remove(turtleMesh);
+    turtleMesh = null;
+    turtleData = null;
+  }
 
   // Generate fresh layout
   generateLevel();
@@ -310,4 +389,14 @@ export function updateCoinRotation(dt) {
       m.rotation.y += 2.0 * dt;
     }
   });
+}
+
+export function getTurtle() {
+  return turtleData ? { x: turtleData.x, z: turtleData.z } : null;
+}
+
+export function hideTurtle() {
+  if (turtleMesh) {
+    turtleMesh.visible = false;
+  }
 }
