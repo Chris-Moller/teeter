@@ -301,11 +301,7 @@ function gameLoop(timestamp) {
     }
 
     // Update slowdown indicator
-    if (result.slowdownActive) {
-      slowdownIndicator.classList.add('visible');
-    } else {
-      slowdownIndicator.classList.remove('visible');
-    }
+    slowdownIndicator.classList.toggle('visible', result.slowdownActive);
 
     // Handle state transitions
     if (result.falling && state === 'playing') {

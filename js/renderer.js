@@ -125,17 +125,18 @@ function createTurtleMesh() {
   shell.castShadow = true;
   group.add(shell);
 
+  // Shared material for head and legs
+  const limbMat = new THREE.MeshStandardMaterial({ color: 0x2E8B2E, roughness: 0.5, metalness: 0.1 });
+
   // Head
   const headGeo = new THREE.SphereGeometry(0.12, 10, 8);
-  const headMat = new THREE.MeshStandardMaterial({ color: 0x2E8B2E, roughness: 0.5, metalness: 0.1 });
-  const head = new THREE.Mesh(headGeo, headMat);
+  const head = new THREE.Mesh(headGeo, limbMat);
   head.position.set(0, 0.05, 0.4);
   head.castShadow = true;
   group.add(head);
 
   // 4 Legs
   const legGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.12, 8);
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x2E8B2E, roughness: 0.5, metalness: 0.1 });
   const legPositions = [
     { x: 0.2, z: 0.2, rotZ: -0.3 },
     { x: -0.2, z: 0.2, rotZ: 0.3 },
@@ -143,7 +144,7 @@ function createTurtleMesh() {
     { x: -0.2, z: -0.2, rotZ: 0.3 },
   ];
   for (const lp of legPositions) {
-    const leg = new THREE.Mesh(legGeo, legMat);
+    const leg = new THREE.Mesh(legGeo, limbMat);
     leg.position.set(lp.x, -0.1, lp.z);
     leg.rotation.z = lp.rotZ;
     leg.castShadow = true;
