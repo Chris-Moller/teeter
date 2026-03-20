@@ -32,7 +32,7 @@ let obstGeo, obstMat, coinGeo, coinMat;
 
 // Simple seeded RNG for deterministic placement
 function seededRandom(seed) {
-  let s = seed;
+  let s = (seed % 2147483646) + 1;
   return function () {
     s = (s * 16807 + 0) % 2147483647;
     return (s - 1) / 2147483646;
