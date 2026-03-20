@@ -296,11 +296,10 @@
   <div id="version-info" data-updated="2026-03-20T20:30:00Z">v1.0.0</div>
   <script>
     (function() {
-      var el = document.getElementById('version-info');
-      var iso = el.getAttribute('data-updated');
+      const el = document.getElementById('version-info');
+      const iso = el.getAttribute('data-updated');
       if (iso) {
-        var d = new Date(iso);
-        var formatted = d.toLocaleString(undefined, {
+        const formatted = new Date(iso).toLocaleString(undefined, {
           year: 'numeric', month: 'short', day: 'numeric',
           hour: '2-digit', minute: '2-digit'
         });
