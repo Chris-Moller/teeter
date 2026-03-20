@@ -77,9 +77,7 @@ function insertScore(name, s) {
   const scores = loadScores();
   scores.push({ name, score: s });
   scores.sort((a, b) => b.score - a.score);
-  const trimmed = scores.slice(0, MAX_SCORES);
-  saveScores(trimmed);
-  return trimmed;
+  saveScores(scores.slice(0, MAX_SCORES));
 }
 
 // --- Leaderboard rendering ---
@@ -122,16 +120,12 @@ function enterGameOver() {
     gameoverMessage.textContent = '';
     nameEntry.classList.remove('visible');
     gameoverOverlay.classList.add('visible');
-    resetTimer = setTimeout(() => {
-      exitGameOver();
-    }, NON_QUALIFYING_DELAY);
+    resetTimer = setTimeout(exitGameOver, NON_QUALIFYING_DELAY);
   }
 }
 
 function submitScore() {
-  let name = nameInput.value.trim();
-  if (name === '') name = 'Anonymous';
-  if (name.length > 15) name = name.slice(0, 15);
+  const name = nameInput.value.trim() || 'Anonymous';
   insertScore(name, finalScore);
   exitGameOver();
 }
@@ -169,9 +163,7 @@ function updateScore(value) {
 
 // --- UI event listeners ---
 
-nameSubmit.addEventListener('click', () => {
-  submitScore();
-});
+nameSubmit.addEventListener('click', submitScore);
 
 nameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
