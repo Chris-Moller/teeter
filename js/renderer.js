@@ -146,21 +146,17 @@ function generateCoins() {
   const coinGeo = new THREE.TorusGeometry(0.25, 0.08, 8, 16);
 
   // Place 2-3 coins between each pair of obstacles
-  const sortedObs = [...obstacleData].sort((a, b) => a.z - b.z);
-
-  // Before first obstacle
+  // obstacleData is already sorted by Z (generated in ascending order)
   const safeZ = BALL_START_Z + 5;
-  const firstObsZ = sortedObs.length > 0 ? sortedObs[0].z : TRACK_LENGTH / 2;
+  const firstObsZ = obstacleData.length > 0 ? obstacleData[0].z : TRACK_LENGTH / 2;
   placeCoinsInRange(safeZ, firstObsZ, rand, coinGeo, coinMat);
 
-  // Between consecutive obstacles
-  for (let i = 0; i < sortedObs.length - 1; i++) {
-    placeCoinsInRange(sortedObs[i].z + 1, sortedObs[i + 1].z - 1, rand, coinGeo, coinMat);
+  for (let i = 0; i < obstacleData.length - 1; i++) {
+    placeCoinsInRange(obstacleData[i].z + 1, obstacleData[i + 1].z - 1, rand, coinGeo, coinMat);
   }
 
-  // After last obstacle
-  if (sortedObs.length > 0) {
-    const lastObsZ = sortedObs[sortedObs.length - 1].z;
+  if (obstacleData.length > 0) {
+    const lastObsZ = obstacleData[obstacleData.length - 1].z;
     placeCoinsInRange(lastObsZ + 1, TRACK_LENGTH / 2, rand, coinGeo, coinMat);
   }
 }

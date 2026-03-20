@@ -112,7 +112,7 @@ function gameLoop(timestamp) {
     updateCoinRotation(dt);
 
     // Handle state transitions
-    if ((result.falling || result.obstacleHit) && state === 'playing') {
+    if (result.falling && state === 'playing') {
       state = 'falling';
     }
 

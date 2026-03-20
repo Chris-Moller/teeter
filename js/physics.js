@@ -5,6 +5,7 @@ const FORWARD_SPEED = 2.0;
 const PITCH_SENSITIVITY = 3.0;
 const MAX_SPEED = 6.0;
 const MAX_DT = 1 / 30; // Cap delta time to prevent physics explosions
+const COIN_COLLECT_RADIUS = 0.8;
 
 let ball = {};
 let trackConfig = {};
@@ -66,7 +67,7 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     if (coinsCollected[i]) continue;
     const dx = ball.x - coins[i].x;
     const dz = ball.z - coins[i].z;
-    if (dx * dx + dz * dz < 0.8 * 0.8) {
+    if (dx * dx + dz * dz < COIN_COLLECT_RADIUS * COIN_COLLECT_RADIUS) {
       coinsCollected[i] = true;
       collectedThisFrame.push(i);
     }
