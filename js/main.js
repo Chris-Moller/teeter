@@ -9,13 +9,12 @@ import {
   getObstacles,
   getCoins,
   hideCoin,
-  showAllCoins,
   updateCoinRotation,
   regenerateLevel,
 } from './renderer.js';
 
 import { initTracker, detectTilt, detectPitch, resetTilt } from './tracker.js';
-import { initPhysics, updatePhysics, resetBall } from './physics.js';
+import { initPhysics, updatePhysics } from './physics.js';
 
 const STORAGE_KEY = 'teeter_highscores';
 const MAX_SCORES = 10;
@@ -53,7 +52,8 @@ function loadScores() {
       .filter((e) => typeof e.name === 'string' && typeof e.score === 'number')
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_SCORES);
-  } catch {
+  } catch (err) {
+    console.warn('loadScores: failed to read high scores from localStorage:', err);
     return [];
   }
 }
@@ -61,8 +61,8 @@ function loadScores() {
 function saveScores(scores) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
-  } catch {
-    // Ignore storage errors (private browsing, full storage)
+  } catch (err) {
+    console.warn('saveScores: failed to persist high scores:', err);
   }
 }
 
@@ -125,7 +125,7 @@ function enterGameOver() {
 }
 
 function submitScore() {
-  const name = nameInput.value.trim() || 'Anonymous';
+  const name = (nameInput.value.trim() || 'Anonymous').slice(0, 15);
   insertScore(name, finalScore);
   exitGameOver();
 }
@@ -173,6 +173,7 @@ nameInput.addEventListener('keydown', (e) => {
 });
 
 leaderboardBtn.addEventListener('click', () => {
+  if (state === 'gameover') return;
   renderLeaderboard();
   leaderboardPanel.classList.add('visible');
 });
