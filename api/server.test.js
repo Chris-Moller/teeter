@@ -296,6 +296,35 @@ async function run() {
     assert.ok(rateLimited, 'Expected rate limiting (429) but it never triggered');
   });
 
+  // --- Concurrent write integrity test ---
+  await test('Concurrent POSTs do not lose updates', async () => {
+    // Reset scores file to empty state
+    fs.writeFileSync(path.join(tmpDir, 'scores.json'), '[]', 'utf8');
+
+    // Fire 10 concurrent POSTs with unique names
+    const count = 10;
+    const promises = [];
+    for (let i = 0; i < count; i++) {
+      promises.push(request('POST', { name: `Conc${i}`, score: (i + 1) * 10 }));
+    }
+    const results = await Promise.all(promises);
+
+    // All should succeed (201)
+    for (const r of results) {
+      assert.strictEqual(r.status, 201, 'Expected 201 for concurrent POST');
+    }
+
+    // Read final state and verify all 10 unique names are present
+    const final = await request('GET');
+    assert.strictEqual(final.status, 200);
+    assert.strictEqual(final.body.length, count,
+      `Expected ${count} scores but got ${final.body.length} — concurrent writes lost updates`);
+    const names = new Set(final.body.map(e => e.name));
+    for (let i = 0; i < count; i++) {
+      assert.ok(names.has(`Conc${i}`), `Missing concurrent entry Conc${i}`);
+    }
+  });
+
   // Print results
   console.log(`\n${passed + failed} tests, ${passed} passed, ${failed} failed`);
 
