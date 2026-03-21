@@ -30,6 +30,13 @@ const MAX_SCORE_VALUE = 999999;
 //     3. Use an external datastore with per-user auth for competitive use.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
 
+if (!SCORE_API_KEY) {
+  console.warn(
+    'WARN: SCORE_API_KEY is not set — POST /api/scores accepts anonymous submissions. ' +
+    'Set SCORE_API_KEY in production to require X-API-Key header on score submissions.'
+  );
+}
+
 // Deployment model: this server is designed for single-instance deployments
 // (one container with a persistent /data volume). The JSON file store is not
 // safe for multi-replica use — if horizontal scaling is needed, replace the
