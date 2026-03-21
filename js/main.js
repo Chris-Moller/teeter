@@ -24,6 +24,7 @@ const subtitle = overlay.querySelector('.subtitle');
 const scoreEl = document.getElementById('score');
 const leaderboardBtn = document.getElementById('leaderboard-btn');
 const gameoverOverlay = document.getElementById('gameover-overlay');
+const gameoverTitle = gameoverOverlay.querySelector('.go-title');
 const gameoverScore = gameoverOverlay.querySelector('.go-score');
 const gameoverMessage = gameoverOverlay.querySelector('.go-message');
 const nameEntry = document.getElementById('name-entry');
@@ -33,20 +34,40 @@ const leaderboardPanel = document.getElementById('leaderboard-panel');
 const leaderboardList = document.getElementById('leaderboard-list');
 const leaderboardClose = document.getElementById('leaderboard-close');
 const slowdownIndicator = document.getElementById('slowdown-indicator');
+const runTimerEl = document.getElementById('run-timer');
 
 const STORAGE_KEY = 'teeter_highscores';
 const MAX_SCORES = 10;
 const NON_QUALIFYING_DELAY = 2000;
 
-let state = 'loading'; // loading | permission | playing | falling | gameover
+let state = 'loading'; // loading | permission | playing | falling | finished | gameover
 let lastTime = 0;
 let resetTimer = null;
 let score = 0;
 let finalScore = 0;
+let runStartTime = 0;
+let runElapsed = 0;
 
 function updateScore(value) {
   score = value;
   scoreEl.textContent = 'Score: ' + score;
+}
+
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 10);
+  if (mins > 0) {
+    return mins + ':' + String(secs).padStart(2, '0') + '.' + ms;
+  }
+  return secs + '.' + ms + 's';
+}
+
+function updateRunTimer() {
+  if (state === 'playing' || state === 'falling') {
+    runElapsed = (performance.now() - runStartTime) / 1000;
+    runTimerEl.textContent = formatTime(runElapsed);
+  }
 }
 
 // --- localStorage leaderboard ---
@@ -125,12 +146,38 @@ function hideLeaderboard() {
   leaderboardPanel.classList.remove('visible');
 }
 
+// --- Finished state ---
+
+function enterFinished() {
+  state = 'finished';
+  finalScore = score;
+
+  gameoverTitle.textContent = 'COURSE COMPLETE!';
+  gameoverScore.textContent = 'Score: ' + finalScore + '  |  Time: ' + formatTime(runElapsed);
+
+  if (scoreQualifies(finalScore)) {
+    gameoverMessage.textContent = 'New high score!';
+    nameEntry.classList.add('visible');
+    nameInput.value = '';
+    nameInput.focus();
+  } else {
+    gameoverMessage.textContent = '';
+    nameEntry.classList.remove('visible');
+    resetTimer = setTimeout(() => {
+      exitGameOver();
+    }, NON_QUALIFYING_DELAY);
+  }
+
+  gameoverOverlay.classList.add('visible');
+}
+
 // --- Game over flow ---
 
 function enterGameOver() {
   finalScore = score;
   state = 'gameover';
 
+  gameoverTitle.textContent = 'GAME OVER';
   gameoverScore.textContent = 'Score: ' + finalScore;
 
   if (scoreQualifies(finalScore)) {
@@ -141,7 +188,6 @@ function enterGameOver() {
   } else {
     gameoverMessage.textContent = '';
     nameEntry.classList.remove('visible');
-    // Auto-dismiss after delay
     resetTimer = setTimeout(() => {
       exitGameOver();
     }, NON_QUALIFYING_DELAY);
@@ -165,6 +211,7 @@ function exitGameOver() {
 
   gameoverOverlay.classList.remove('visible');
   nameEntry.classList.remove('visible');
+  gameoverTitle.textContent = 'GAME OVER';
 
   // Reset the game
   regenerateLevel();
@@ -177,8 +224,21 @@ function exitGameOver() {
   resetTilt();
   resetBallRotation();
   updateScore(0);
-  updateBallPosition(0, config.trackHeight / 2 + config.ballRadius, config.ballStartZ);
-  updateCamera(config.ballStartZ);
+
+  // Reset ball to start of curve
+  const startPoint = config.curve.getPointAt(0);
+  updateBallPosition(
+    startPoint.x,
+    startPoint.y + config.trackHeight / 2 + config.ballRadius,
+    startPoint.z
+  );
+  updateCamera(0, startPoint.x, startPoint.y + config.trackHeight / 2 + config.ballRadius, startPoint.z);
+
+  // Reset timer
+  runStartTime = performance.now();
+  runElapsed = 0;
+  runTimerEl.textContent = formatTime(0);
+
   state = 'playing';
 }
 
@@ -202,7 +262,6 @@ leaderboardClose.addEventListener('click', () => {
   hideLeaderboard();
 });
 
-// Close leaderboard on backdrop click
 leaderboardPanel.addEventListener('click', (e) => {
   if (e.target === leaderboardPanel) {
     hideLeaderboard();
@@ -213,22 +272,18 @@ leaderboardPanel.addEventListener('click', (e) => {
 
 async function init() {
   try {
-    // Initialize Three.js renderer
     initRenderer();
     const config = getTrackConfig();
 
-    // Attach obstacle, coin, and turtle data to config for physics
     config.obstacles = getObstacles();
     config.coins = getCoins();
     config.turtle = getTurtle();
     initPhysics(config);
 
-    // Initial render so the scene is visible during loading
     render();
 
     subtitle.textContent = 'Requesting camera access...';
 
-    // Request camera
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -241,14 +296,15 @@ async function init() {
 
     subtitle.textContent = 'Loading head tracking model...';
 
-    // Initialize head tracker
     await initTracker(stream);
 
-    // Hide overlay, show score and leaderboard button, and start game
     overlay.classList.add('hidden');
     scoreEl.style.display = 'block';
     leaderboardBtn.style.display = 'block';
+    runTimerEl.style.display = 'block';
     updateScore(0);
+    runStartTime = performance.now();
+    runElapsed = 0;
     state = 'playing';
     lastTime = performance.now();
     requestAnimationFrame(gameLoop);
@@ -272,20 +328,17 @@ function gameLoop(timestamp) {
   lastTime = timestamp;
 
   if (state === 'playing' || state === 'falling') {
-    // Get head tilt and pitch
     const tiltAngle = detectTilt(timestamp);
     const pitch = detectPitch();
 
-    // Update physics
     const result = updatePhysics(dt, tiltAngle, pitch);
 
-    // Update renderer
     updateBallPosition(result.x, result.y, result.z);
     updateBallRotation(result.vx, result.vz, dt);
-    updateCamera(result.z);
+    updateCamera(result.t, result.x, result.y, result.z);
 
-    // Animate coins
     updateCoinRotation(dt);
+    updateRunTimer();
 
     // Handle coin collection
     if (result.coinsCollected && result.coinsCollected.length > 0) {
@@ -308,7 +361,9 @@ function gameLoop(timestamp) {
     }
 
     // Handle state transitions
-    if (result.falling && state === 'playing') {
+    if (result.finished && state === 'playing') {
+      enterFinished();
+    } else if (result.falling && state === 'playing') {
       state = 'falling';
     }
 

@@ -2,9 +2,7 @@ import * as THREE from 'three';
 
 const TRACK_WIDTH = 4.5;
 const TRACK_HEIGHT = 0.2;
-const TRACK_LENGTH = 50;
 const BALL_RADIUS = 0.3;
-const BALL_START_Z = -20;
 
 // Obstacle config
 const OBSTACLE_WIDTH = 1.5;
@@ -12,24 +10,40 @@ const OBSTACLE_HEIGHT = 1.0;
 const OBSTACLE_DEPTH = 0.4;
 const OBSTACLE_MIN_SPACING = 7;
 const OBSTACLE_MAX_SPACING = 9;
-const SAFE_ZONE_Z = BALL_START_Z + 5; // No obstacles/coins before Z = -15
-const MIN_GAP = 1.5; // Minimum passable gap beside obstacle
+const SAFE_ZONE_T = 0.06; // No obstacles/coins before ~6% of curve
+const MIN_GAP = 1.5;
 
 // Coin config
 const COIN_RADIUS = 0.25;
 const COIN_TUBE = 0.08;
-const COIN_Y = TRACK_HEIGHT / 2 + 0.35;
 
-let scene, camera, renderer;
-let trackMesh, ballMesh;
-let edgeLeft, edgeRight;
+// Curve definition — 3 visible turns (right → left → right) with ~10 unit height drop
+const CURVE_POINTS = [
+  new THREE.Vector3(0, 10, 0),
+  new THREE.Vector3(0, 9.5, 12),
+  new THREE.Vector3(4, 8.5, 28),
+  new THREE.Vector3(6, 7.5, 44),
+  new THREE.Vector3(3, 6.5, 58),
+  new THREE.Vector3(-4, 5.5, 72),
+  new THREE.Vector3(-6, 4.5, 86),
+  new THREE.Vector3(-2, 3.0, 102),
+  new THREE.Vector3(3, 1.5, 118),
+  new THREE.Vector3(2, 0.5, 132),
+  new THREE.Vector3(0, 0, 145),
+];
+const trackCurve = new THREE.CatmullRomCurve3(CURVE_POINTS, false, 'centripetal', 0.5);
+const CURVE_SEGMENTS = 200;
+const CURVE_LENGTH = trackCurve.getLength();
+
+let scene, camera, renderer, dirLight;
+let ballMesh;
 
 let obstacleMeshes = [];
-let obstacleData = []; // { x, z, halfW, halfD }
+let obstacleData = [];
 let coinMeshes = [];
-let coinData = []; // { x, z }
+let coinData = [];
 let turtleMesh = null;
-let turtleData = null; // { x, z } or null
+let turtleData = null;
 
 // Simple seeded RNG for deterministic placement
 function seededRandom(seed) {
@@ -40,26 +54,152 @@ function seededRandom(seed) {
   };
 }
 
+// Build a ribbon mesh from the curve
+function buildTrackMesh(curve, segments, halfWidth) {
+  const positions = [];
+  const normals = [];
+  const uvs = [];
+  const indices = [];
+  const up = new THREE.Vector3(0, 1, 0);
+
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const point = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t).normalize();
+    const lateral = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (lateral.lengthSq() < 0.001) {
+      lateral.set(1, 0, 0);
+    }
+
+    const left = point.clone().sub(lateral.clone().multiplyScalar(halfWidth));
+    const right = point.clone().add(lateral.clone().multiplyScalar(halfWidth));
+
+    positions.push(left.x, left.y, left.z);
+    positions.push(right.x, right.y, right.z);
+    normals.push(0, 1, 0, 0, 1, 0);
+    uvs.push(0, t, 1, t);
+
+    if (i < segments) {
+      const base = i * 2;
+      indices.push(base, base + 1, base + 2);
+      indices.push(base + 1, base + 3, base + 2);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// Build edge line meshes along the track edges
+function buildEdgeLines(curve, segments, halfWidth) {
+  const up = new THREE.Vector3(0, 1, 0);
+  const leftPoints = [];
+  const rightPoints = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const point = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t).normalize();
+    const lateral = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (lateral.lengthSq() < 0.001) lateral.set(1, 0, 0);
+
+    const lp = point.clone().sub(lateral.clone().multiplyScalar(halfWidth));
+    lp.y += TRACK_HEIGHT / 2 + 0.04;
+    leftPoints.push(lp);
+
+    const rp = point.clone().add(lateral.clone().multiplyScalar(halfWidth));
+    rp.y += TRACK_HEIGHT / 2 + 0.04;
+    rightPoints.push(rp);
+  }
+
+  const edgeMat = new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.6 });
+
+  function makeEdgeTube(points) {
+    const curvePath = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5);
+    const tubeGeo = new THREE.TubeGeometry(curvePath, segments, 0.03, 4, false);
+    return new THREE.Mesh(tubeGeo, edgeMat);
+  }
+
+  return { left: makeEdgeTube(leftPoints), right: makeEdgeTube(rightPoints) };
+}
+
+// Create a checkerboard finish line at the end of the curve
+function createFinishLine(curve, halfWidth) {
+  const point = curve.getPointAt(1.0);
+  const tangent = curve.getTangentAt(0.999).normalize();
+  const lateral = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 1, 0)).normalize();
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 32;
+  const ctx = canvas.getContext('2d');
+  const squareSize = 16;
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 8; col++) {
+      ctx.fillStyle = (row + col) % 2 === 0 ? '#ffffff' : '#000000';
+      ctx.fillRect(col * squareSize, row * squareSize, squareSize, squareSize);
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+
+  const geo = new THREE.PlaneGeometry(halfWidth * 2, 1.5);
+  const mat = new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geo, mat);
+
+  mesh.position.copy(point);
+  mesh.position.y += 0.02;
+  mesh.lookAt(point.clone().add(tangent));
+  mesh.rotateX(-Math.PI / 2);
+
+  return mesh;
+}
+
+// Convert curve-local (t, d) to world position
+function curveLocalToWorld(t, d) {
+  const clampedT = Math.max(0, Math.min(1, t));
+  const point = trackCurve.getPointAt(clampedT);
+  const tangent = trackCurve.getTangentAt(Math.min(clampedT, 0.999)).normalize();
+  const up = new THREE.Vector3(0, 1, 0);
+  const lateral = new THREE.Vector3().crossVectors(tangent, up).normalize();
+  if (lateral.lengthSq() < 0.001) lateral.set(1, 0, 0);
+
+  return new THREE.Vector3(
+    point.x + lateral.x * d,
+    point.y,
+    point.z + lateral.z * d
+  );
+}
+
 function generateObstacles(rng) {
   const obstacles = [];
-  const halfTrack = TRACK_WIDTH / 2;
-  const halfLength = TRACK_LENGTH / 2;
+  const halfWidth = TRACK_WIDTH / 2;
+  const spacingInT = OBSTACLE_MIN_SPACING / CURVE_LENGTH;
+  const maxSpacingInT = OBSTACLE_MAX_SPACING / CURVE_LENGTH;
 
-  let z = SAFE_ZONE_Z;
-  while (z < halfLength - 2) {
-    const spacing = OBSTACLE_MIN_SPACING + rng() * (OBSTACLE_MAX_SPACING - OBSTACLE_MIN_SPACING);
-    z += spacing;
-    if (z >= halfLength - 1) break;
+  let t = SAFE_ZONE_T;
+  while (t < 0.95) {
+    const spacing = spacingInT + rng() * (maxSpacingInT - spacingInT);
+    t += spacing;
+    if (t >= 0.95) break;
 
-    // Place obstacle so there's at least MIN_GAP on one side
-    const maxOffset = halfTrack - OBSTACLE_WIDTH / 2 - 0.1;
-    const x = (rng() * 2 - 1) * maxOffset;
+    const maxOffset = halfWidth - OBSTACLE_WIDTH / 2 - 0.1;
+    const d = (rng() * 2 - 1) * maxOffset;
+
+    const worldPos = curveLocalToWorld(t, d);
 
     obstacles.push({
-      x,
-      z,
+      t,
+      d,
       halfW: OBSTACLE_WIDTH / 2,
       halfD: OBSTACLE_DEPTH / 2,
+      worldX: worldPos.x,
+      worldY: worldPos.y,
+      worldZ: worldPos.z,
     });
   }
   return obstacles;
@@ -67,37 +207,37 @@ function generateObstacles(rng) {
 
 function generateCoins(rng, obstacles) {
   const coins = [];
-  const halfTrack = TRACK_WIDTH / 2;
+  const halfWidth = TRACK_WIDTH / 2;
 
-  // Place 2-3 coins between each pair of obstacles
   for (let i = 0; i < obstacles.length; i++) {
-    const startZ = i === 0 ? SAFE_ZONE_Z : obstacles[i - 1].z + 1;
-    const endZ = obstacles[i].z - 1;
-    const gap = endZ - startZ;
-    if (gap < 2) continue;
+    const startT = i === 0 ? SAFE_ZONE_T : obstacles[i - 1].t + 0.01;
+    const endT = obstacles[i].t - 0.01;
+    const gap = endT - startT;
+    if (gap < 0.015) continue;
 
-    const count = gap >= 5 ? 3 : 2;
+    const count = gap >= 0.035 ? 3 : 2;
     const step = gap / (count + 1);
 
     for (let j = 1; j <= count; j++) {
-      const cz = startZ + step * j;
-      const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
-      coins.push({ x: cx, z: cz });
+      const ct = startT + step * j;
+      const cd = (rng() * 2 - 1) * (halfWidth - 0.5);
+      const worldPos = curveLocalToWorld(ct, cd);
+      coins.push({ t: ct, d: cd, worldX: worldPos.x, worldY: worldPos.y, worldZ: worldPos.z });
     }
   }
 
   // Coins after the last obstacle
   if (obstacles.length > 0) {
-    const lastZ = obstacles[obstacles.length - 1].z + 1;
-    const halfLength = TRACK_LENGTH / 2;
-    const gap = halfLength - lastZ;
-    if (gap >= 3) {
+    const lastT = obstacles[obstacles.length - 1].t + 0.01;
+    const gap = 0.95 - lastT;
+    if (gap >= 0.02) {
       const count = 2;
       const step = gap / (count + 1);
       for (let j = 1; j <= count; j++) {
-        const cz = lastZ + step * j;
-        const cx = (rng() * 2 - 1) * (halfTrack - 0.5);
-        coins.push({ x: cx, z: cz });
+        const ct = lastT + step * j;
+        const cd = (rng() * 2 - 1) * (halfWidth - 0.5);
+        const worldPos = curveLocalToWorld(ct, cd);
+        coins.push({ t: ct, d: cd, worldX: worldPos.x, worldY: worldPos.y, worldZ: worldPos.z });
       }
     }
   }
@@ -111,27 +251,23 @@ function createTurtleMesh() {
   const shellMat = new THREE.MeshStandardMaterial({ color: 0x185818, roughness: 0.5, metalness: 0.15 });
   const headMat = new THREE.MeshStandardMaterial({ color: 0x2EA52E, roughness: 0.5, metalness: 0.1 });
 
-  // Shell (flattened sphere)
   const shellGeo = new THREE.SphereGeometry(0.4, 16, 12);
   const shell = new THREE.Mesh(shellGeo, shellMat);
   shell.scale.set(1, 0.5, 1.1);
   shell.position.y = 0.1;
   group.add(shell);
 
-  // Body (slightly smaller, underneath shell)
   const bodyGeo = new THREE.SphereGeometry(0.35, 12, 10);
   const body = new THREE.Mesh(bodyGeo, bodyMat);
   body.scale.set(1, 0.35, 1.05);
   body.position.y = -0.02;
   group.add(body);
 
-  // Head (small sphere at front)
   const headGeo = new THREE.SphereGeometry(0.12, 10, 8);
   const head = new THREE.Mesh(headGeo, headMat);
   head.position.set(0, 0.05, 0.42);
   group.add(head);
 
-  // Legs (4 flattened cylinders)
   const legGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.12, 6);
   const legPositions = [
     { x: -0.22, z: 0.2 },
@@ -149,34 +285,33 @@ function createTurtleMesh() {
 }
 
 function generateTurtle(rng, obstacles) {
-  const halfTrack = TRACK_WIDTH / 2;
-  const halfLength = TRACK_LENGTH / 2;
-  const minZ = SAFE_ZONE_Z + 5;
-  const maxZ = halfLength - 3;
+  const halfWidth = TRACK_WIDTH / 2;
+  const minT = SAFE_ZONE_T + 0.05;
+  const maxT = 0.90;
 
-  if (maxZ <= minZ) return null;
+  if (maxT <= minT) return null;
 
-  // Pick a random Z, avoiding obstacle zones
   let attempts = 0;
   while (attempts < 20) {
-    const z = minZ + rng() * (maxZ - minZ);
+    const t = minT + rng() * (maxT - minT);
     let clear = true;
     for (const o of obstacles) {
-      if (Math.abs(z - o.z) < 2) {
+      if (Math.abs(t - o.t) < 0.015) {
         clear = false;
         break;
       }
     }
     if (clear) {
-      const x = (rng() * 2 - 1) * (halfTrack - 0.5);
-      return { x, z };
+      const d = (rng() * 2 - 1) * (halfWidth - 0.5);
+      const worldPos = curveLocalToWorld(t, d);
+      return { t, d, worldX: worldPos.x, worldY: worldPos.y, worldZ: worldPos.z };
     }
     attempts++;
   }
 
-  // Fallback: place in safe zone area
-  const x = (rng() * 2 - 1) * (halfTrack - 0.5);
-  return { x, z: minZ + 2 };
+  const d = (rng() * 2 - 1) * (halfWidth - 0.5);
+  const worldPos = curveLocalToWorld(minT + 0.02, d);
+  return { t: minT + 0.02, d, worldX: worldPos.x, worldY: worldPos.y, worldZ: worldPos.z };
 }
 
 // Shared geometry and materials for obstacles and coins
@@ -195,14 +330,23 @@ const coinMat = new THREE.MeshStandardMaterial({
   emissiveIntensity: 0.3,
 });
 
+let trackMeshObj, edgeLeftObj, edgeRightObj, finishLineMesh;
+
 function generateLevel() {
   const rng = seededRandom(Date.now());
   obstacleData = generateObstacles(rng);
   coinData = generateCoins(rng, obstacleData);
 
+  const coinY = TRACK_HEIGHT / 2 + 0.35;
+
   obstacleMeshes = obstacleData.map((o) => {
     const mesh = new THREE.Mesh(obstGeo, obstMat);
-    mesh.position.set(o.x, TRACK_HEIGHT / 2 + OBSTACLE_HEIGHT / 2, o.z);
+    // Position in world coords, oriented along the curve tangent
+    const tangent = trackCurve.getTangentAt(Math.min(o.t, 0.999)).normalize();
+    mesh.position.set(o.worldX, o.worldY + TRACK_HEIGHT / 2 + OBSTACLE_HEIGHT / 2, o.worldZ);
+    // Rotate obstacle to face along curve tangent
+    const angle = Math.atan2(tangent.x, tangent.z);
+    mesh.rotation.y = angle;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
@@ -211,7 +355,7 @@ function generateLevel() {
 
   coinMeshes = coinData.map((c) => {
     const mesh = new THREE.Mesh(coinGeo, coinMat);
-    mesh.position.set(c.x, COIN_Y, c.z);
+    mesh.position.set(c.worldX, c.worldY + coinY, c.worldZ);
     mesh.rotation.x = Math.PI / 2;
     scene.add(mesh);
     return mesh;
@@ -221,46 +365,43 @@ function generateLevel() {
   turtleData = generateTurtle(rng, obstacleData);
   if (turtleData) {
     turtleMesh = createTurtleMesh();
-    turtleMesh.position.set(turtleData.x, COIN_Y, turtleData.z);
+    turtleMesh.position.set(turtleData.worldX, turtleData.worldY + coinY, turtleData.worldZ);
     scene.add(turtleMesh);
   }
 }
 
 export function regenerateLevel() {
-  // Remove old obstacle meshes from scene
   for (const mesh of obstacleMeshes) {
     scene.remove(mesh);
   }
   obstacleMeshes = [];
   obstacleData = [];
 
-  // Remove old coin meshes from scene
   for (const mesh of coinMeshes) {
     scene.remove(mesh);
   }
   coinMeshes = [];
   coinData = [];
 
-  // Remove old turtle mesh from scene
   if (turtleMesh) {
     scene.remove(turtleMesh);
     turtleMesh = null;
     turtleData = null;
   }
 
-  // Generate fresh layout
   generateLevel();
 }
 
 export function initRenderer() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87CEEB);
-  scene.fog = new THREE.Fog(0x87CEEB, 30, 80);
+  scene.fog = new THREE.Fog(0x87CEEB, 40, 120);
 
   // Camera
-  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-  camera.position.set(0, 4, BALL_START_Z - 8);
-  camera.lookAt(0, 0, BALL_START_Z);
+  const startPoint = trackCurve.getPointAt(0);
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 300);
+  camera.position.set(startPoint.x, startPoint.y + 4, startPoint.z - 8);
+  camera.lookAt(startPoint);
 
   // Renderer
   renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -274,41 +415,42 @@ export function initRenderer() {
   const ambient = new THREE.AmbientLight(0x404060, 0.8);
   scene.add(ambient);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-  dirLight.position.set(5, 10, 5);
+  dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  dirLight.position.set(5, 20, 5);
   dirLight.castShadow = true;
   dirLight.shadow.mapSize.width = 1024;
   dirLight.shadow.mapSize.height = 1024;
   dirLight.shadow.camera.near = 0.5;
-  dirLight.shadow.camera.far = 60;
-  dirLight.shadow.camera.left = -10;
-  dirLight.shadow.camera.right = 10;
+  dirLight.shadow.camera.far = 80;
+  dirLight.shadow.camera.left = -15;
+  dirLight.shadow.camera.right = 15;
   dirLight.shadow.camera.top = 30;
   dirLight.shadow.camera.bottom = -30;
   scene.add(dirLight);
+  scene.add(dirLight.target);
 
-  // Track (fixed, never rotates)
-  const trackGeo = new THREE.BoxGeometry(TRACK_WIDTH, TRACK_HEIGHT, TRACK_LENGTH);
+  // Track — curved ribbon mesh
+  const halfWidth = TRACK_WIDTH / 2;
+  const trackGeo = buildTrackMesh(trackCurve, CURVE_SEGMENTS, halfWidth);
   const trackMat = new THREE.MeshStandardMaterial({
     color: 0x8B7355,
     roughness: 0.7,
     metalness: 0.1,
   });
-  trackMesh = new THREE.Mesh(trackGeo, trackMat);
-  trackMesh.position.set(0, 0, 0);
-  trackMesh.receiveShadow = true;
-  scene.add(trackMesh);
+  trackMeshObj = new THREE.Mesh(trackGeo, trackMat);
+  trackMeshObj.receiveShadow = true;
+  scene.add(trackMeshObj);
 
-  // Edge lines for visibility
-  const edgeMat = new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.6 });
-  const edgeGeo = new THREE.BoxGeometry(0.06, 0.08, TRACK_LENGTH);
-  edgeLeft = new THREE.Mesh(edgeGeo, edgeMat);
-  edgeLeft.position.set(-TRACK_WIDTH / 2, TRACK_HEIGHT / 2 + 0.04, 0);
-  scene.add(edgeLeft);
+  // Edge lines
+  const edges = buildEdgeLines(trackCurve, CURVE_SEGMENTS, halfWidth);
+  edgeLeftObj = edges.left;
+  edgeRightObj = edges.right;
+  scene.add(edgeLeftObj);
+  scene.add(edgeRightObj);
 
-  edgeRight = new THREE.Mesh(edgeGeo, edgeMat);
-  edgeRight.position.set(TRACK_WIDTH / 2, TRACK_HEIGHT / 2 + 0.04, 0);
-  scene.add(edgeRight);
+  // Finish line
+  finishLineMesh = createFinishLine(trackCurve, halfWidth);
+  scene.add(finishLineMesh);
 
   // Ball
   const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
@@ -319,7 +461,8 @@ export function initRenderer() {
   });
   ballMesh = new THREE.Mesh(ballGeo, ballMat);
   ballMesh.castShadow = true;
-  ballMesh.position.set(0, TRACK_HEIGHT / 2 + BALL_RADIUS, BALL_START_Z);
+  ballMesh.position.copy(startPoint);
+  ballMesh.position.y += TRACK_HEIGHT / 2 + BALL_RADIUS;
   scene.add(ballMesh);
 
   // Generate initial level layout
@@ -339,6 +482,13 @@ function onResize() {
 
 export function updateBallPosition(x, y, z) {
   ballMesh.position.set(x, y, z);
+
+  // Update shadow camera to follow ball
+  if (dirLight) {
+    dirLight.position.set(x + 5, y + 20, z + 5);
+    dirLight.target.position.set(x, y, z);
+    dirLight.target.updateMatrixWorld();
+  }
 }
 
 export function resetBallRotation() {
@@ -346,15 +496,19 @@ export function resetBallRotation() {
 }
 
 export function updateBallRotation(vx, vz, dt) {
-  // Rolling rotation: x-axis for forward motion, z-axis for lateral
   ballMesh.rotation.x -= (vz / BALL_RADIUS) * dt;
   ballMesh.rotation.z += (vx / BALL_RADIUS) * dt;
 }
 
-export function updateCamera(ballZ) {
-  camera.position.z = ballZ - 8;
-  camera.position.y = 4;
-  camera.lookAt(0, 0, ballZ);
+export function updateCamera(ballT, bx, by, bz) {
+  const clampedT = Math.max(0, Math.min(ballT, 0.999));
+  const tangent = trackCurve.getTangentAt(clampedT).normalize();
+  const ballPos = new THREE.Vector3(bx, by, bz);
+  const targetPos = ballPos.clone()
+    .sub(tangent.clone().multiplyScalar(8))
+    .add(new THREE.Vector3(0, 4, 0));
+  camera.position.lerp(targetPos, 0.08);
+  camera.lookAt(ballPos);
 }
 
 export function render() {
@@ -365,16 +519,16 @@ export function getTrackConfig() {
   return {
     trackWidth: TRACK_WIDTH,
     trackHeight: TRACK_HEIGHT,
-    trackLength: TRACK_LENGTH,
     ballRadius: BALL_RADIUS,
-    ballStartZ: BALL_START_Z,
+    curve: trackCurve,
+    curveLength: CURVE_LENGTH,
   };
 }
 
 export function getObstacles() {
   return obstacleData.map((o) => ({
-    x: o.x,
-    z: o.z,
+    t: o.t,
+    d: o.d,
     halfW: o.halfW,
     halfD: o.halfD,
     height: OBSTACLE_HEIGHT,
@@ -382,7 +536,7 @@ export function getObstacles() {
 }
 
 export function getCoins() {
-  return coinData.map((c) => ({ x: c.x, z: c.z }));
+  return coinData.map((c) => ({ t: c.t, d: c.d }));
 }
 
 export function hideCoin(index) {
@@ -401,14 +555,13 @@ export function updateCoinRotation(dt) {
       m.rotation.y += 2.0 * dt;
     }
   });
-  // Rotate turtle powerup too
   if (turtleMesh && turtleMesh.visible) {
     turtleMesh.rotation.y += 1.5 * dt;
   }
 }
 
 export function getTurtle() {
-  return turtleData ? { x: turtleData.x, z: turtleData.z } : null;
+  return turtleData ? { t: turtleData.t, d: turtleData.d } : null;
 }
 
 export function hideTurtle() {
