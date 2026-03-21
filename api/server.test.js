@@ -765,9 +765,11 @@ async function run() {
     try { fs.rmSync(intDir, { recursive: true }); } catch {}
   });
 
-  // --- Default deployment path (Docker default: NODE_ENV=development, no SCORE_API_KEY) ---
-  // Verifies the shared leaderboard works out of the box without auth configuration.
-  await test('Default deployment: anonymous score submission succeeds (NODE_ENV=development, no API key)', async () => {
+  // --- Anonymous deployment path (NODE_ENV=development, no SCORE_API_KEY) ---
+  // Verifies the shared leaderboard works when operators opt into anonymous mode.
+  // Docker default is NODE_ENV=production (secure-by-default); operators must
+  // explicitly set NODE_ENV=development to enable anonymous submissions.
+  await test('Anonymous mode: score submission succeeds with NODE_ENV=development, no API key', async () => {
     const defPort = PORT + 7;
     const defDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-default-'));
     const defPatched = serverSrc
@@ -778,7 +780,7 @@ async function run() {
     const defPath = path.join(defDir, 'server.default.js');
     fs.writeFileSync(defPath, defPatched);
 
-    // Simulate Docker default: NODE_ENV=development, no SCORE_API_KEY
+    // Simulate anonymous mode: NODE_ENV=development, no SCORE_API_KEY
     const defEnv = { ...process.env };
     delete defEnv.SCORE_API_KEY;
     defEnv.NODE_ENV = 'development';
