@@ -330,12 +330,14 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      // Validate name — reject empty/whitespace-only names
+      // Validate name — reject empty/whitespace-only names and control characters
       if (typeof data.name !== 'string') {
         sendError(res, 400, 'Name must be a string');
         return;
       }
-      const name = data.name.trim();
+      // Strip control characters (U+0000-001F, U+007F, U+0080-009F) before trimming
+      // to prevent invisible/unprintable characters in leaderboard names
+      const name = data.name.replace(/[\x00-\x1F\x7F\x80-\x9F]/g, '').trim();
       if (!name) {
         sendError(res, 400, 'Name must not be empty');
         return;
