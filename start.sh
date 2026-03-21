@@ -3,21 +3,16 @@ mkdir -p /data
 chown appuser:appuser /data
 chmod 700 /data
 
-# --- Deployment validation & graceful degradation policy ---
-# POLICY: When no auth is configured in production, the container intentionally
-# skips the API backend and serves only the static game via nginx. This is an
-# approved degradation path — not a silent failure. The rationale:
-#   1. Secure-by-default: an unauthenticated write endpoint must not start
-#      automatically in production (the Node.js server enforces this via
-#      process.exit(1) when SCORE_API_KEY and ALLOW_ANONYMOUS_SCORES are both
-#      missing).
-#   2. Graceful: operators who only want the game without shared scores can
-#      run the default container as-is. The frontend detects the missing API
-#      and falls back to localStorage leaderboard.
-#   3. Observable: the NOTICE below, the crash sentinel file, and the failing
-#      HEALTHCHECK all signal to operators and orchestrators that the shared
-#      leaderboard is disabled. No behavior is hidden.
-# To enable the shared leaderboard, set SCORE_API_KEY or ALLOW_ANONYMOUS_SCORES=true.
+# --- Deployment validation & graceful degradation ---
+# Default: ALLOW_ANONYMOUS_SCORES=true (set in Dockerfile). The shared
+# leaderboard API starts automatically with challenge-token, rate-limit,
+# and per-IP cooldown protections.
+#
+# When operators explicitly disable anonymous scores (ALLOW_ANONYMOUS_SCORES=false)
+# and do not set SCORE_API_KEY, the container skips the API and serves only the
+# static game via nginx (localStorage-only leaderboard). This is an approved
+# degradation path — not a silent failure. The NOTICE below and the crash
+# sentinel signal the disabled state to orchestrators.
 SKIP_API=false
 if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ] && [ "$ALLOW_ANONYMOUS_SCORES" != "true" ]; then
   echo "======================================================================" >&2
