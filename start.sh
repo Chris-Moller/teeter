@@ -3,26 +3,32 @@ mkdir -p /data
 chown appuser:appuser /data
 chmod 700 /data
 
-# --- Crash-budget policy (configurable via environment) ---
+# --- Crash-budget policy with supervised recovery ---
 # The API process is restarted up to MAX_RETRIES times within a sliding
-# RETRY_WINDOW (seconds). If the budget is exhausted the API stays down,
-# nginx continues serving the static frontend, and the game falls back to
-# localStorage for leaderboard data. A sentinel file is written so
-# external health-checks / orchestrators can detect the state and
-# restart the container if desired.
+# RETRY_WINDOW (seconds). If the budget is exhausted, the supervisor
+# enters a cooldown period (API_RECOVERY_PAUSE, default 60s) then
+# automatically resets the crash budget and retries. This prevents
+# prolonged degraded mode — the API self-heals without requiring a
+# full container restart.
+#
+# A sentinel file is written during cooldown so external health-checks
+# can detect the degraded state. The sentinel is removed when the API
+# is restarted after cooldown.
 #
 # Override defaults by setting these env vars in your Dockerfile or
 # docker-compose.yml:
-#   API_MAX_RETRIES  – max crash restarts within the window (default 5)
-#   API_RETRY_WINDOW – window length in seconds (default 60)
+#   API_MAX_RETRIES    – max crash restarts within the window (default 5)
+#   API_RETRY_WINDOW   – window length in seconds (default 60)
+#   API_RECOVERY_PAUSE – seconds to wait before resetting budget (default 60)
 MAX_RETRIES="${API_MAX_RETRIES:-5}"
 RETRY_WINDOW="${API_RETRY_WINDOW:-60}"
+RECOVERY_PAUSE="${API_RECOVERY_PAUSE:-60}"
 CRASH_SENTINEL="/tmp/api_crash_exhausted"
 
 # Remove stale sentinel from previous runs
 rm -f "$CRASH_SENTINEL"
 
-# Start Node API in the background with bounded restarts.
+# Start Node API in the background with bounded restarts and auto-recovery.
 (
   failures=0
   window_start=$(date +%s)
@@ -44,18 +50,17 @@ rm -f "$CRASH_SENTINEL"
     echo "WARN: Node API exited with status $exit_code (failure $failures/$MAX_RETRIES in ${elapsed}s window)." >&2
 
     if [ "$failures" -ge "$MAX_RETRIES" ]; then
-      echo "ERROR: Node API crashed $MAX_RETRIES times within ${RETRY_WINDOW}s — giving up. Leaderboard API is unavailable." >&2
-      echo "ERROR: Container HEALTHCHECK will now fail. Orchestrator should restart/alert." >&2
-      echo "ERROR: Game falls back to localStorage-only leaderboard until container restart." >&2
-      # Write sentinel so external health checks can detect API crash-loop exhaustion.
-      # The Dockerfile HEALTHCHECK tests for this file: the container becomes "unhealthy"
-      # after --retries consecutive failures, allowing Docker/Kubernetes to restart it
-      # automatically (restart policy) or surface alerts via monitoring.
-      # Operators: configure container restart policies (e.g. docker --restart=on-failure,
-      # or Kubernetes livenessProbe) to auto-recover, and set up alerting on container
-      # restart events to detect persistent crash loops.
+      echo "ERROR: Node API crashed $MAX_RETRIES times within ${RETRY_WINDOW}s." >&2
+      echo "INFO: Writing crash sentinel and entering ${RECOVERY_PAUSE}s recovery cooldown..." >&2
       echo "API_CRASHED=$(date -Iseconds) failures=$MAX_RETRIES window=${RETRY_WINDOW}s exit_code=$exit_code" > "$CRASH_SENTINEL"
-      break
+
+      # Supervised recovery: wait, then reset budget and retry
+      sleep "$RECOVERY_PAUSE"
+      echo "INFO: Recovery cooldown elapsed. Resetting crash budget and restarting API..." >&2
+      rm -f "$CRASH_SENTINEL"
+      failures=0
+      window_start=$(date +%s)
+      continue
     fi
 
     sleep 2

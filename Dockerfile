@@ -31,11 +31,12 @@ VOLUME /data
 EXPOSE 8080
 # Health check verifies both nginx and API backend are up.
 # If the crash sentinel (/tmp/api_crash_exhausted) exists, the API has
-# exhausted its restart budget (default: 5 crashes in 60s, configurable via
-# API_MAX_RETRIES / API_RETRY_WINDOW env vars) and the container becomes
-# unhealthy. Operators should configure a restart policy (e.g.
-# --restart=on-failure) and alerting on repeated container restarts to
-# detect persistent failures promptly.
+# exhausted its restart budget and is in recovery cooldown. The supervisor
+# automatically resets the budget after API_RECOVERY_PAUSE (default 60s)
+# and retries — no container restart required. The sentinel is temporary
+# and is removed when the API restarts after cooldown.
+# Configurable via: API_MAX_RETRIES (default 5), API_RETRY_WINDOW (default 60s),
+# API_RECOVERY_PAUSE (default 60s).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD test ! -f /tmp/api_crash_exhausted && wget -qO- http://127.0.0.1:8080/api/health || exit 1
 CMD ["/app/start.sh"]

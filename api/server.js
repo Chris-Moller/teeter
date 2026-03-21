@@ -19,9 +19,20 @@ const MAX_SCORE_VALUE = 999999;
 // a valid, unexpired token — this prevents automated replay attacks and
 // ensures each submission was preceded by a server interaction.
 //
-// Defense-in-depth layers that protect the leaderboard:
+// Threat model & abuse limits for anonymous scoreboard submissions:
+//   Asset: shared game leaderboard (top 10 scores). Low-value target —
+//     worst-case abuse is fake scores, not data loss or privilege escalation.
+//   Threat actors: casual cheaters submitting fake scores from a browser.
+//     Sophisticated attackers (curl/scripts) are bounded by rate limits.
+//   Accepted risk: a determined attacker with multiple IPs could insert
+//     fake scores. This is acceptable for a casual game leaderboard.
+//     If stronger guarantees are needed, set SCORE_API_KEY and gate
+//     submissions through a backend proxy with user authentication.
+//
+// Defense-in-depth layers:
 // - Challenge tokens: one-time-use, IP-bound, expire after 5 minutes.
-// - Rate limiting (3 POST/min/IP) bounds casual abuse volume.
+//   Max 5 pending tokens per IP to prevent memory exhaustion.
+// - Rate limiting (3 POST/min/IP) bounds abuse volume to ~180 submissions/hour.
 // - Per-IP cooldown (10s between successful submissions) prevents rapid-fire.
 // - Duplicate detection rejects exact name+score replays already on the board.
 // - Body-size cap (1024 B) and input validation reject malformed payloads.
@@ -32,10 +43,13 @@ const MAX_SCORE_VALUE = 999999;
 // - CSP connect-src 'self' prevents scripts on other origins from hitting /api.
 // - Score plausibility: positive integers only, capped at MAX_SCORE_VALUE.
 //
-// SCORE_API_KEY (env var): Optional. When set, POST /api/scores requires a
-// matching "X-API-Key" header in addition to the challenge token. This is
-// useful for server-to-server integrations or if the operator adds a backend
-// proxy that injects the key.
+// SCORE_API_KEY (env var): Optional for browser-based deployments (the
+// default). When set, POST /api/scores additionally requires a matching
+// "X-API-Key" header. Use this when:
+// - Deploying behind a backend proxy that can inject the key, or
+// - Exposing the API for server-to-server integrations.
+// When unset, the challenge-token + rate-limit + cooldown controls provide
+// sufficient abuse resistance for a casual game leaderboard.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
 
 if (SCORE_API_KEY) {
