@@ -12,6 +12,8 @@ FROM nginx:1.27.5-alpine3.21
 # Update cadence: bump the pinned version when:
 #   - A new Node.js 22.x patch is released with security fixes, OR
 #   - The base nginx:1.27.5-alpine3.21 image is updated.
+# Last CVE review: 2026-03-21 — nodejs=22.15.1-r0 has no known unpatched CVEs
+# in Alpine's security tracker at time of pinning.
 RUN apk add --no-cache 'nodejs=22.15.1-r0' \
  && NODE_VER="$(node -e "process.stdout.write(process.version)")" \
  && echo "Node.js ${NODE_VER} installed from Alpine repos" \
@@ -31,10 +33,12 @@ RUN nginx -t
 # Persistent storage for scores.json. Operators should back up this volume
 # according to their retention policy; data is non-critical (game scores).
 VOLUME /data
-# SCORE_API_KEY: Optional. When set, POST /api/scores requires a matching
-# X-API-Key header. Not required for the default browser-based deployment
-# (the game client submits scores anonymously, protected by rate limiting,
-# input validation, and CSP/CORS restrictions).
+# SCORE_API_KEY: Optional for local/demo use, recommended for production.
+# When set, POST /api/scores requires a matching X-API-Key header.
+# Production policy: set SCORE_API_KEY via docker run -e or compose env
+# and route submissions through a backend proxy that injects the key
+# after authenticating users. When unset (default), the endpoint relies
+# on challenge tokens, rate limiting, cooldown, and CORS/CSP restrictions.
 EXPOSE 8080
 # Health check verifies both nginx and API backend are up.
 # If the crash sentinel (/tmp/api_crash_exhausted) exists, the API has
