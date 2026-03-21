@@ -123,8 +123,9 @@ async function addScoreAsync(name, value) {
     if (!challengeRes.ok) {
       // Server explicitly rejected the challenge request (e.g. 429 rate limit).
       // Do NOT fall back to localStorage — honour server-side controls.
+      // Return serverRejected: true so the caller can inform the user.
       console.warn('Challenge rejected by server:', challengeRes.status);
-      return cachedScores.length ? cachedScores : [];
+      return { scores: cachedScores.length ? cachedScores : [], serverRejected: true };
     }
     const { token } = await challengeRes.json();
 
@@ -140,21 +141,22 @@ async function addScoreAsync(name, value) {
       // Server explicitly rejected the submission (4xx/5xx) — do not fall back
       // to local storage, as that would weaken server-enforced integrity
       // (e.g. rate limiting, auth, duplicate detection).
+      // Return serverRejected: true so the caller can inform the user.
       console.warn('Score submission rejected by server:', res.status);
-      return cachedScores.length ? cachedScores : [];
+      return { scores: cachedScores.length ? cachedScores : [], serverRejected: true };
     }
     const scores = await res.json();
     if (Array.isArray(scores)) {
       cachedScores = scores;
       saveLocalScores(scores);
-      return scores;
+      return { scores, serverRejected: false };
     }
   } catch {
     // Network/timeout error — API unreachable
     if (serverReachable) {
       // Server was reachable but the POST failed unexpectedly (e.g. JSON parse
       // error on response). Treat as server-side issue, don't bypass to local.
-      return cachedScores.length ? cachedScores : [];
+      return { scores: cachedScores.length ? cachedScores : [], serverRejected: true };
     }
     // Server genuinely unreachable — fall back to localStorage
   }
@@ -164,7 +166,7 @@ async function addScoreAsync(name, value) {
   const trimmed = scores.slice(0, MAX_SCORES);
   saveLocalScores(trimmed);
   cachedScores = trimmed;
-  return trimmed;
+  return { scores: trimmed, serverRejected: false };
 }
 
 function scoreQualifies(value) {
@@ -238,8 +240,13 @@ async function submitScore() {
   let name = nameInput.value.trim();
   if (!name) name = 'Anonymous';
   nameSubmit.disabled = true;
-  await addScoreAsync(name, finalScore);
+  const result = await addScoreAsync(name, finalScore);
   nameSubmit.disabled = false;
+  if (result.serverRejected) {
+    // Inform the user that the server rejected their score submission
+    // (e.g. rate limit, auth failure, duplicate) rather than silently proceeding.
+    gameoverMessage.textContent = 'Score not saved (server rejected).';
+  }
   exitGameOver();
 }
 
