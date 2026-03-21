@@ -37,33 +37,32 @@ VOLUME /data
 # a matching X-API-Key header. Route browser submissions through a backend
 # proxy that injects the key after authenticating users.
 #
-# Default: production mode with anonymous scores DISABLED (secure-by-default).
-# To enable browser-based anonymous score submissions (with challenge tokens,
-# rate limiting, and cooldown for abuse resistance):
-#   docker run -e ALLOW_ANONYMOUS_SCORES=true ...
+# Default: production mode with anonymous scores ENABLED for shared leaderboard.
+# The browser game client cannot securely hold an API key, so anonymous mode
+# with challenge tokens, rate limiting, and per-IP cooldown is the intended
+# default for this casual game. See threat model in api/server.js.
 #
 # To require API-key authentication (server-to-server only):
-#   docker run -e SCORE_API_KEY=mysecret ...
+#   docker run -e SCORE_API_KEY=mysecret -e ALLOW_ANONYMOUS_SCORES=false ...
+#
+# To disable the shared leaderboard entirely (localStorage-only):
+#   docker run -e ALLOW_ANONYMOUS_SCORES=false ...
 ENV NODE_ENV=production
-ENV ALLOW_ANONYMOUS_SCORES=false
+ENV ALLOW_ANONYMOUS_SCORES=true
 EXPOSE 8080
-# --- Deployment auth paths (graceful degradation policy) ---
+# --- Deployment auth paths ---
 #
-# Default (no env overrides): the leaderboard API is DISABLED.
-#   This is an intentional, approved degradation path — not a silent failure.
-#   start.sh detects the missing auth config, logs a NOTICE, writes a crash
-#   sentinel, and skips API startup (no crash-loop). nginx serves the static
-#   game with localStorage-only leaderboard. The HEALTHCHECK reports unhealthy
-#   so orchestrators (Docker Swarm, Kubernetes, etc.) can detect the degraded
-#   state and alert operators. To enable the shared leaderboard, set
-#   SCORE_API_KEY or ALLOW_ANONYMOUS_SCORES=true.
+# Default (no env overrides): shared leaderboard API is ENABLED with anonymous
+#   browser submissions. Challenge tokens, rate limiting, and per-IP cooldown
+#   provide abuse resistance appropriate for a casual game leaderboard.
+#   This is the intended mode: the browser client cannot securely hold an API
+#   key, so anonymous mode is the natural default. See threat model in
+#   api/server.js.
 #
-# Anonymous browser mode (casual game deployment):
-#   docker run -e ALLOW_ANONYMOUS_SCORES=true -v scores:/data -p 8080:8080 ball-game
-#   - Browser clients submit scores directly (no API key needed).
-#   - Challenge tokens, rate limiting, and per-IP cooldown prevent casual abuse.
-#   - This is the intended mode for a browser-based game where the client
-#     cannot securely hold an API key. See threat model in api/server.js.
+# To disable the shared leaderboard (localStorage-only fallback):
+#   docker run -e ALLOW_ANONYMOUS_SCORES=false -v scores:/data -p 8080:8080 ball-game
+#   start.sh skips API startup, nginx serves the static game only, and the
+#   HEALTHCHECK reflects API-down state so orchestrators can detect it.
 #
 # API-key mode (server-to-server integration):
 #   docker run -e SCORE_API_KEY=mysecret -e ALLOW_ANONYMOUS_SCORES=false \

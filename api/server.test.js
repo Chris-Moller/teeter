@@ -853,11 +853,12 @@ async function run() {
     try { fs.rmSync(defDir, { recursive: true }); } catch {}
   });
 
-  // --- Default Docker container startup path ---
-  // Simulates the exact Docker default: NODE_ENV=production, ALLOW_ANONYMOUS_SCORES=false,
-  // no SCORE_API_KEY. Verifies the API exits cleanly with an actionable error message
-  // so operators know the leaderboard is disabled and how to enable it.
-  await test('Default Docker path: exits with actionable error when no auth configured', async () => {
+  // --- Explicit-disable path ---
+  // Simulates: NODE_ENV=production, ALLOW_ANONYMOUS_SCORES=false, no SCORE_API_KEY.
+  // This is the explicit opt-out path (not the Docker default, which is
+  // ALLOW_ANONYMOUS_SCORES=true). Verifies the API exits cleanly with an
+  // actionable error message so operators know the leaderboard is disabled.
+  await test('Explicit disable: exits with actionable error when ALLOW_ANONYMOUS_SCORES=false and no API key', async () => {
     const dockerPort = PORT + 8;
     const dockerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-docker-default-'));
     const dockerPatched = serverSrc
@@ -890,13 +891,12 @@ async function run() {
     try { fs.rmSync(dockerDir, { recursive: true }); } catch {}
   });
 
-  // --- Release gate: end-to-end shared leaderboard availability ---
-  // Validates that the recommended deployment config (ALLOW_ANONYMOUS_SCORES=true)
-  // provides a fully working shared leaderboard: challenge → POST → GET → verify
-  // persistence. This is the deployment path for browser-based game servers.
-  // Addresses security review finding: "Add a release gate test that validates
-  // end-to-end shared leaderboard availability in default deployment config."
-  await test('Release gate: e2e shared leaderboard works with ALLOW_ANONYMOUS_SCORES=true in production', async () => {
+  // --- Release gate: default Docker deployment path ---
+  // Validates the Docker default deployment (NODE_ENV=production,
+  // ALLOW_ANONYMOUS_SCORES=true, no SCORE_API_KEY) provides a fully working
+  // shared leaderboard: challenge → POST → GET → verify persistence.
+  // This is the intended default for the casual browser game.
+  await test('Release gate: e2e shared leaderboard works in default Docker deployment', async () => {
     const gatePort = PORT + 9;
     const gateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-gate-'));
     const gatePatched = serverSrc
