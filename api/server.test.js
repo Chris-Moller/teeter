@@ -485,7 +485,7 @@ async function run() {
   });
 
   // --- Production mode guardrails ---
-  await test('Server starts in production without SCORE_API_KEY but warns', async () => {
+  await test('Server exits in production without SCORE_API_KEY (secure-by-default)', async () => {
     const prodPort = PORT + 3;
     const prodDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-prod-'));
     const prodPatched = serverSrc
@@ -498,6 +498,7 @@ async function run() {
 
     const prodEnv = { ...process.env };
     delete prodEnv.SCORE_API_KEY;
+    delete prodEnv.ALLOW_ANONYMOUS_SCORES;
     prodEnv.NODE_ENV = 'production';
     const prodProc = spawn(process.execPath, [prodPath], {
       stdio: 'pipe',
@@ -508,13 +509,48 @@ async function run() {
     prodProc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
     prodProc.stdout.on('data', () => {});
 
-    // Server should start despite missing SCORE_API_KEY (warns instead of crashing)
-    await waitForPort(prodPort);
-    assert.ok(stderrOutput.includes('SCORE_API_KEY'), 'Expected warning message mentioning SCORE_API_KEY');
+    // Server should exit with non-zero code (refuses to start without API key)
+    const exitCode = await new Promise((resolve) => {
+      prodProc.on('exit', (code) => resolve(code));
+    });
+    assert.strictEqual(exitCode, 1, 'Expected exit code 1 when production lacks SCORE_API_KEY');
+    assert.ok(stderrOutput.includes('FATAL'), 'Expected FATAL error message');
+    assert.ok(stderrOutput.includes('SCORE_API_KEY'), 'Expected message mentioning SCORE_API_KEY');
 
-    // Verify it accepts anonymous submissions (no API key required)
+    try { fs.rmSync(prodDir, { recursive: true }); } catch {}
+  });
+
+  await test('Server starts in production with ALLOW_ANONYMOUS_SCORES=true override', async () => {
+    const prodPort = PORT + 3;
+    const prodDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-prod-anon-'));
+    const prodPatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${prodPort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${prodDir.replace(/\\/g, '/')}';`)
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;');
+    const prodPath = path.join(prodDir, 'server.prod-anon.js');
+    fs.writeFileSync(prodPath, prodPatched);
+
+    const prodEnv = { ...process.env };
+    delete prodEnv.SCORE_API_KEY;
+    prodEnv.NODE_ENV = 'production';
+    prodEnv.ALLOW_ANONYMOUS_SCORES = 'true';
+    const prodProc = spawn(process.execPath, [prodPath], {
+      stdio: 'pipe',
+      env: prodEnv,
+    });
+
+    let stderrOutput = '';
+    prodProc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
+    prodProc.stdout.on('data', () => {});
+
+    // Server should start with explicit anonymous override
+    await waitForPort(prodPort);
+    assert.ok(stderrOutput.includes('ALLOW_ANONYMOUS_SCORES'), 'Expected warning mentioning ALLOW_ANONYMOUS_SCORES');
+
+    // Verify it accepts anonymous submissions
     const postRes = await postWithChallenge(prodPort, { name: 'ProdAnon', score: 77 });
-    assert.strictEqual(postRes.status, 201, 'Expected 201 for anonymous POST in production without SCORE_API_KEY');
+    assert.strictEqual(postRes.status, 201, 'Expected 201 for anonymous POST with ALLOW_ANONYMOUS_SCORES=true');
 
     prodProc.kill('SIGTERM');
     try { fs.rmSync(prodDir, { recursive: true }); } catch {}
@@ -768,9 +804,9 @@ async function run() {
   });
 
   // --- Anonymous deployment path (NODE_ENV=development, no SCORE_API_KEY) ---
-  // Verifies the shared leaderboard works when operators opt into anonymous mode.
-  // Docker default is NODE_ENV=production (secure-by-default); operators must
-  // explicitly set NODE_ENV=development to enable anonymous submissions.
+  // Verifies the shared leaderboard works when operators use development mode.
+  // Docker default is NODE_ENV=production (secure-by-default); operators set
+  // NODE_ENV=development for local/demo play with anonymous submissions.
   await test('Anonymous mode: score submission succeeds with NODE_ENV=development, no API key', async () => {
     const defPort = PORT + 7;
     const defDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-default-'));

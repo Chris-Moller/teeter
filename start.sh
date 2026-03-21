@@ -4,12 +4,19 @@ chown appuser:appuser /data
 chmod 700 /data
 
 # --- Deployment validation ---
-# Warn if SCORE_API_KEY is not set in production. The server still starts —
-# challenge tokens, rate limiting, and cooldown provide baseline protection.
-if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ]; then
-  echo "WARNING: NODE_ENV=production but SCORE_API_KEY is not set." >&2
+# Enforce SCORE_API_KEY in production unless ALLOW_ANONYMOUS_SCORES=true.
+# This prevents accidental deployment of an unauthenticated write endpoint.
+if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ] && [ "$ALLOW_ANONYMOUS_SCORES" != "true" ]; then
+  echo "FATAL: NODE_ENV=production but SCORE_API_KEY is not set." >&2
+  echo "Refusing to start with an unauthenticated write endpoint in production." >&2
+  echo "Fix: set SCORE_API_KEY via 'docker run -e' or compose env, or explicitly" >&2
+  echo "opt in to anonymous submissions with ALLOW_ANONYMOUS_SCORES=true." >&2
+  exit 1
+fi
+
+if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ] && [ "$ALLOW_ANONYMOUS_SCORES" = "true" ]; then
+  echo "WARNING: NODE_ENV=production with ALLOW_ANONYMOUS_SCORES=true." >&2
   echo "Score submissions will be accepted without API-key authentication." >&2
-  echo "For stronger protection, set SCORE_API_KEY via 'docker run -e' or compose env." >&2
 fi
 
 # --- Process model: nginx + supervised Node.js API ---
