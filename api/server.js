@@ -43,15 +43,20 @@ const MAX_SCORE_VALUE = 999999;
 // - CSP connect-src 'self' prevents scripts on other origins from hitting /api.
 // - Score plausibility: positive integers only, capped at MAX_SCORE_VALUE.
 //
-// SCORE_API_KEY (env var): Optional for local/demo deployments, recommended
-// for production. When set, POST /api/scores additionally requires a matching
-// "X-API-Key" header. Production policy:
+// SCORE_API_KEY (env var): Required in production, optional for dev/demo.
+// When set, POST /api/scores additionally requires a matching "X-API-Key"
+// header. Production policy:
 //   - Set SCORE_API_KEY via environment variable (docker -e or compose env).
 //   - Route browser submissions through a backend proxy that authenticates
 //     users and injects the key into forwarded requests.
 //   - For server-to-server integrations, pass the key directly in X-API-Key.
-// When unset, the challenge-token + rate-limit + cooldown controls provide
-// sufficient abuse resistance for a casual game leaderboard.
+// When unset in development mode, the challenge-token + rate-limit + cooldown
+// controls provide sufficient abuse resistance for a casual game leaderboard.
+//
+// ALLOW_ANONYMOUS_SCORES (env var): Explicit opt-in to allow anonymous
+// submissions in production without SCORE_API_KEY. Must be set to "true"
+// to bypass the production API-key requirement. This is intended only for
+// operators who have reviewed the threat model and accept the risk.
 //
 // --- Operational monitoring thresholds ---
 // Monitor these indicators to detect abuse or misconfiguration:
@@ -63,10 +68,9 @@ const MAX_SCORE_VALUE = 999999;
 // Use container log aggregation (stdout/stderr) for alerting. The server
 // logs rate-limit events and challenge rejections to stderr.
 //
-// --- Security acceptance: anonymous write endpoint ---
-// ACCEPTED RISK: POST /api/scores is intentionally anonymous to support
-// browser-based gameplay without user accounts. This design decision was
-// reviewed and accepted with the following mitigations in place:
+// --- Security acceptance: anonymous write endpoint (dev/demo only) ---
+// In development mode, POST /api/scores is intentionally anonymous to support
+// browser-based gameplay without user accounts. Mitigations in place:
 //   1. Challenge tokens (one-time, IP-bound, 5-min TTL, max 5 pending/IP)
 //   2. Rate limiting (3 POST/min/IP)
 //   3. Per-IP cooldown (10s between successful submissions)
@@ -75,31 +79,38 @@ const MAX_SCORE_VALUE = 999999;
 //   6. CORS denial (no Access-Control-Allow-Origin header)
 //   7. CSP connect-src: 'self' (blocks cross-origin script access)
 //   8. Server binds 127.0.0.1 only (nginx proxy required)
-// To enforce authenticated submissions, set SCORE_API_KEY and route
-// traffic through a backend proxy that injects the key after user auth.
+// In production, SCORE_API_KEY is enforced unless ALLOW_ANONYMOUS_SCORES=true.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const ALLOW_ANONYMOUS_SCORES = process.env.ALLOW_ANONYMOUS_SCORES === 'true';
 
-// Production advisory: warn if SCORE_API_KEY is not set in production.
-// The server still starts — challenge tokens, rate limiting, and cooldown
-// provide baseline abuse resistance. But API-key gating is recommended
-// for production deployments exposed to the public internet.
-if (NODE_ENV === 'production' && !SCORE_API_KEY) {
+// Production enforcement: reject startup if SCORE_API_KEY is not set and
+// ALLOW_ANONYMOUS_SCORES is not explicitly enabled. This prevents accidental
+// deployment of an unauthenticated write endpoint in production.
+if (NODE_ENV === 'production' && !SCORE_API_KEY && !ALLOW_ANONYMOUS_SCORES) {
+  console.error(
+    'FATAL: NODE_ENV=production but SCORE_API_KEY is not set. ' +
+    'Refusing to start with an unauthenticated write endpoint in production. ' +
+    'Fix: set SCORE_API_KEY via environment variable, or explicitly opt in to ' +
+    'anonymous submissions with ALLOW_ANONYMOUS_SCORES=true.'
+  );
+  process.exit(1);
+}
+
+if (NODE_ENV === 'production' && !SCORE_API_KEY && ALLOW_ANONYMOUS_SCORES) {
   console.warn(
-    'WARNING: NODE_ENV=production but SCORE_API_KEY is not set. ' +
+    'WARNING: NODE_ENV=production with ALLOW_ANONYMOUS_SCORES=true. ' +
     'Score submissions will be accepted without API-key authentication. ' +
-    'Challenge tokens, rate limiting, and cooldown still provide abuse resistance. ' +
-    'For stronger protection, set SCORE_API_KEY via environment variable.'
+    'Challenge tokens, rate limiting, and cooldown provide baseline abuse resistance.'
   );
 }
 
 if (SCORE_API_KEY) {
   console.log('INFO: SCORE_API_KEY is set — POST /api/scores requires X-API-Key header.');
-} else {
+} else if (NODE_ENV !== 'production') {
   console.log(
     'INFO: SCORE_API_KEY is not set — POST /api/scores accepts anonymous submissions. ' +
-    'This is the expected configuration for local/demo browser-based deployments. ' +
-    'For production, set NODE_ENV=production and SCORE_API_KEY to enforce authentication.'
+    'This is the expected configuration for local/demo browser-based deployments.'
   );
 }
 
