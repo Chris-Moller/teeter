@@ -43,20 +43,25 @@ const MAX_SCORE_VALUE = 999999;
 // - CSP connect-src 'self' prevents scripts on other origins from hitting /api.
 // - Score plausibility: positive integers only, capped at MAX_SCORE_VALUE.
 //
-// SCORE_API_KEY (env var): Required in production, optional for dev/demo.
+// SCORE_API_KEY (env var): Optional, for server-to-server integrations only.
 // When set, POST /api/scores additionally requires a matching "X-API-Key"
-// header. Production policy:
+// header. This mode is NOT intended for direct browser use — the browser
+// client cannot securely hold an API key.
 //   - Set SCORE_API_KEY via environment variable (docker -e or compose env).
 //   - Route browser submissions through a backend proxy that authenticates
 //     users and injects the key into forwarded requests.
 //   - For server-to-server integrations, pass the key directly in X-API-Key.
-// When unset in development mode, the challenge-token + rate-limit + cooldown
-// controls provide sufficient abuse resistance for a casual game leaderboard.
+// Default auth mode (Docker image ships with ALLOW_ANONYMOUS_SCORES=true):
+//   Browser clients submit scores directly. Challenge tokens, rate limiting,
+//   and per-IP cooldown provide sufficient abuse resistance for a casual game
+//   leaderboard. No API key or proxy required.
 //
-// ALLOW_ANONYMOUS_SCORES (env var): Explicit opt-in to allow anonymous
-// submissions in production without SCORE_API_KEY. Must be set to "true"
-// to bypass the production API-key requirement. This is intended only for
-// operators who have reviewed the threat model and accept the risk.
+// ALLOW_ANONYMOUS_SCORES (env var): Enables anonymous score submissions in
+// production without SCORE_API_KEY. The Docker image defaults to "true"
+// because the browser game client cannot hold API keys, and the defense-in-
+// depth layers (challenge tokens, rate limiting, cooldown, CORS denial)
+// provide sufficient protection for a casual game leaderboard.
+// Set to "false" when using SCORE_API_KEY for server-to-server auth.
 //
 // --- Operational monitoring thresholds ---
 // Monitor these indicators to detect abuse or misconfiguration:

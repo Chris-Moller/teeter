@@ -33,22 +33,33 @@ RUN nginx -t
 # Persistent storage for scores.json. Operators should back up this volume
 # according to their retention policy; data is non-critical (game scores).
 VOLUME /data
-# SCORE_API_KEY: Required in production. When set, POST /api/scores requires
+# SCORE_API_KEY: Optional. When set, POST /api/scores additionally requires
 # a matching X-API-Key header. Route browser submissions through a backend
 # proxy that injects the key after authenticating users.
 #
-# Default: production mode (secure-by-default). The server will refuse to
-# start unless SCORE_API_KEY is set or ALLOW_ANONYMOUS_SCORES=true is
-# explicitly provided.
+# Default: production mode with anonymous scores enabled. The browser game
+# client submits scores directly using challenge tokens, rate limiting, and
+# cooldown for abuse resistance (see threat model in api/server.js).
+# This is the correct default for a browser-based casual game leaderboard
+# where the client cannot securely hold an API key.
 #
-# For local/demo play, override with: -e NODE_ENV=development
-# or: -e ALLOW_ANONYMOUS_SCORES=true
+# To require API-key authentication (server-to-server only):
+#   docker run -e SCORE_API_KEY=mysecret -e ALLOW_ANONYMOUS_SCORES=false ...
 ENV NODE_ENV=production
+ENV ALLOW_ANONYMOUS_SCORES=true
 EXPOSE 8080
-# --- Deployment auth paths (choose one) ---
+# --- Deployment auth paths ---
 #
-# PATH 1: Production with API-key gating (default, most secure):
-#   docker run -e SCORE_API_KEY=mysecret -v scores:/data -p 8080:8080 ball-game
+# Default (no env overrides): anonymous browser submissions with safeguards.
+#   docker run -v scores:/data -p 8080:8080 ball-game
+#   - Browser clients submit scores directly (no API key needed).
+#   - Challenge tokens, rate limiting, and per-IP cooldown prevent casual abuse.
+#   - This is the intended mode for a browser-based game where the client
+#     cannot securely hold an API key. See threat model in api/server.js.
+#
+# API-key mode (server-to-server integration):
+#   docker run -e SCORE_API_KEY=mysecret -e ALLOW_ANONYMOUS_SCORES=false \
+#              -v scores:/data -p 8080:8080 ball-game
 #   - POST /api/scores requires X-API-Key header matching SCORE_API_KEY.
 #   - Browser clients do NOT hold the key. Route browser submissions through a
 #     backend reverse proxy that authenticates users and injects the X-API-Key
@@ -56,20 +67,9 @@ EXPOSE 8080
 #   - Without a proxy, browser score submissions will receive 401 — the static
 #     game still works but scores fall back to localStorage only.
 #
-# PATH 2: Anonymous mode for local/demo play:
+# Development mode:
 #   docker run -e NODE_ENV=development -v scores:/data -p 8080:8080 ball-game
-#   - No API key required. Browser submits scores directly.
-#   - Challenge tokens, rate limiting, and cooldown provide abuse resistance.
-#
-# PATH 3: Production anonymous (explicit opt-in):
-#   docker run -e ALLOW_ANONYMOUS_SCORES=true -v scores:/data -p 8080:8080 ball-game
-#   - Like PATH 2 but in production mode. Requires explicit opt-in.
-#   - Use only after reviewing the threat model in api/server.js.
-#
-# Default behaviour (no env vars):
-#   NODE_ENV=production is set. The API server will refuse to start without
-#   SCORE_API_KEY or ALLOW_ANONYMOUS_SCORES=true. nginx still serves the static
-#   game; the leaderboard falls back to localStorage.
+#   - Same as default anonymous mode but with development logging.
 #
 # Optional tuning (with defaults):
 #   API_MAX_RETRIES=5        — max API crash restarts within the retry window
