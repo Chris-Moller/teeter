@@ -33,64 +33,12 @@ RUN nginx -t
 # Persistent storage for scores.json. Operators should back up this volume
 # according to their retention policy; data is non-critical (game scores).
 VOLUME /data
-# SCORE_API_KEY: Optional. When set, POST /api/scores additionally requires
-# a matching X-API-Key header. Route browser submissions through a backend
-# proxy that injects the key after authenticating users.
-#
-# Default: production mode with anonymous scores ENABLED for shared leaderboard.
-# The browser game client cannot securely hold an API key, so anonymous mode
-# with challenge tokens, rate limiting, and per-IP cooldown is the intended
-# default for this casual game. See threat model in api/server.js.
-#
-# To require API-key authentication (server-to-server only):
-#   docker run -e SCORE_API_KEY=mysecret -e ALLOW_ANONYMOUS_SCORES=false ...
-#
-# To disable the shared leaderboard entirely (localStorage-only):
-#   docker run -e ALLOW_ANONYMOUS_SCORES=false ...
+# Default: shared leaderboard enabled with anonymous browser submissions.
+# Challenge tokens, rate limiting, and per-IP cooldown provide abuse resistance.
+# Optional: set SCORE_API_KEY for server-to-server auth (see api/server.js).
 ENV NODE_ENV=production
 ENV ALLOW_ANONYMOUS_SCORES=true
 EXPOSE 8080
-# --- Deployment auth paths ---
-#
-# Default (no env overrides): shared leaderboard API is ENABLED with anonymous
-#   browser submissions. Challenge tokens, rate limiting, and per-IP cooldown
-#   provide abuse resistance appropriate for a casual game leaderboard.
-#   This is the intended mode: the browser client cannot securely hold an API
-#   key, so anonymous mode is the natural default. See threat model in
-#   api/server.js.
-#
-# To disable the shared leaderboard (localStorage-only fallback):
-#   docker run -e ALLOW_ANONYMOUS_SCORES=false -v scores:/data -p 8080:8080 ball-game
-#   start.sh skips API startup, nginx serves the static game only, and the
-#   HEALTHCHECK reflects API-down state so orchestrators can detect it.
-#
-# API-key mode (server-to-server integration):
-#   docker run -e SCORE_API_KEY=mysecret -e ALLOW_ANONYMOUS_SCORES=false \
-#              -v scores:/data -p 8080:8080 ball-game
-#   - POST /api/scores requires X-API-Key header matching SCORE_API_KEY.
-#   - Browser clients do NOT hold the key. Route browser submissions through a
-#     backend reverse proxy that authenticates users and injects the X-API-Key
-#     header into forwarded requests to /api/scores.
-#   - Without a proxy, browser score submissions will receive 401 — the static
-#     game still works but scores fall back to localStorage only.
-#
-# Development mode:
-#   docker run -e NODE_ENV=development -v scores:/data -p 8080:8080 ball-game
-#   - Same as default anonymous mode but with development logging.
-#
-# Optional tuning (with defaults):
-#   API_MAX_RETRIES=5        — max API crash restarts within the retry window
-#   API_RETRY_WINDOW=60      — retry window length in seconds
-#   API_RECOVERY_PAUSE=60    — seconds to wait before resetting crash budget
-#
-# Health check verifies both nginx and API backend are up.
-# If the crash sentinel (/tmp/api_crash_exhausted) exists, the API has
-# exhausted its restart budget and is in recovery cooldown. The supervisor
-# automatically resets the budget after API_RECOVERY_PAUSE (default 60s)
-# and retries — no container restart required. The sentinel is temporary
-# and is removed when the API restarts after cooldown.
-# Configurable via: API_MAX_RETRIES (default 5), API_RETRY_WINDOW (default 60s),
-# API_RECOVERY_PAUSE (default 60s).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD test ! -f /tmp/api_crash_exhausted && wget -qO- http://127.0.0.1:8080/api/health || exit 1
 CMD ["/app/start.sh"]
