@@ -1,9 +1,11 @@
 FROM nginx:1.27-alpine3.21
 # Install Node.js LTS from Alpine 3.21 official packages.
-# Pinned to 22.x minor series via apk constraint. Alpine apk packages are
-# signed by the distro maintainers; provenance is verified by apk's built-in
-# signature checking against /etc/apk/keys. No npm/npx or third-party
-# package managers are used — only Node.js stdlib modules.
+# Pinned to 22.x series via apk constraint — Node.js 22 is the current LTS
+# release (codename "Jod", active LTS until Oct 2025, maintenance until Apr 2027).
+# Alpine apk packages are signed by the distro maintainers; provenance is
+# verified by apk's built-in signature checking against /etc/apk/keys.
+# No npm/npx or third-party package managers are used — only Node.js stdlib modules.
+# The build will fail if the 22.x package is unavailable, preventing silent downgrades.
 RUN apk add --no-cache 'nodejs~=22' \
  && node --version \
  && echo "Node.js $(node -e "process.stdout.write(process.version)") installed from Alpine repos"
