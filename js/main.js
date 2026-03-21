@@ -146,14 +146,14 @@ function hideLeaderboard() {
   leaderboardPanel.classList.remove('visible');
 }
 
-// --- Finished state ---
+// --- End-of-run overlay (shared by finish and game-over) ---
 
-function enterFinished() {
-  state = 'finished';
+function showEndOverlay(newState, title, scoreText) {
   finalScore = score;
+  state = newState;
 
-  gameoverTitle.textContent = 'COURSE COMPLETE!';
-  gameoverScore.textContent = 'Score: ' + finalScore + '  |  Time: ' + formatTime(runElapsed);
+  gameoverTitle.textContent = title;
+  gameoverScore.textContent = scoreText;
 
   if (scoreQualifies(finalScore)) {
     gameoverMessage.textContent = 'New high score!';
@@ -171,29 +171,12 @@ function enterFinished() {
   gameoverOverlay.classList.add('visible');
 }
 
-// --- Game over flow ---
+function enterFinished() {
+  showEndOverlay('finished', 'COURSE COMPLETE!', 'Score: ' + score + '  |  Time: ' + formatTime(runElapsed));
+}
 
 function enterGameOver() {
-  finalScore = score;
-  state = 'gameover';
-
-  gameoverTitle.textContent = 'GAME OVER';
-  gameoverScore.textContent = 'Score: ' + finalScore;
-
-  if (scoreQualifies(finalScore)) {
-    gameoverMessage.textContent = 'New high score!';
-    nameEntry.classList.add('visible');
-    nameInput.value = '';
-    nameInput.focus();
-  } else {
-    gameoverMessage.textContent = '';
-    nameEntry.classList.remove('visible');
-    resetTimer = setTimeout(() => {
-      exitGameOver();
-    }, NON_QUALIFYING_DELAY);
-  }
-
-  gameoverOverlay.classList.add('visible');
+  showEndOverlay('gameover', 'GAME OVER', 'Score: ' + score);
 }
 
 function submitScore() {

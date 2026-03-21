@@ -11,7 +11,6 @@ const OBSTACLE_DEPTH = 0.4;
 const OBSTACLE_MIN_SPACING = 7;
 const OBSTACLE_MAX_SPACING = 9;
 const SAFE_ZONE_T = 0.06; // No obstacles/coins before ~6% of curve
-const MIN_GAP = 1.5;
 
 // Coin config
 const COIN_RADIUS = 0.25;
@@ -132,7 +131,6 @@ function buildEdgeLines(curve, segments, halfWidth) {
 function createFinishLine(curve, halfWidth) {
   const point = curve.getPointAt(1.0);
   const tangent = curve.getTangentAt(0.999).normalize();
-  const lateral = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 1, 0)).normalize();
 
   const canvas = document.createElement('canvas');
   canvas.width = 128;
