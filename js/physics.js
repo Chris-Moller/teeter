@@ -162,17 +162,9 @@ function updateOnTrack(dt, tiltAngle, pitch) {
 
   // Track end — wrap back to start if ball reaches the end
   let trackCompleted = false;
-  const halfLength = trackConfig.trackLength / 2;
-  if (ball.z > halfLength) {
-    ball.z = -halfLength + 1;
-    trackCompleted = true;
-  }
-
-  // Finish line detection
-  let finished = false;
   if (ball.t >= 1.0) {
-    finished = true;
-    ball.t = 1.0;
+    ball.t = ball.t - 1.0;
+    trackCompleted = true;
   }
 
   // Convert curve-local to world position
@@ -192,12 +184,11 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     d: ball.d,
     falling: ball.falling,
     needsReset: false,
-    finished,
     obstacleHit,
+    trackCompleted,
     coinsCollected: newlyCollected,
     turtleCollected: turtleJustCollected,
     slowdownActive,
-    trackCompleted,
   };
 }
 
@@ -221,12 +212,11 @@ function updateFalling(dt) {
     d: ball.d,
     falling: true,
     needsReset,
-    finished: false,
     obstacleHit: false,
+    trackCompleted: false,
     coinsCollected: [],
     turtleCollected: false,
     slowdownActive,
-    trackCompleted: false,
   };
 }
 
@@ -243,8 +233,8 @@ function getFallbackResult() {
     x: 0, y: 0, z: 0,
     vx: 0, vz: 0,
     t: 0, d: 0,
-    falling: false, needsReset: false, finished: false,
-    obstacleHit: false, coinsCollected: [], turtleCollected: false,
+    falling: false, needsReset: false,
+    obstacleHit: false, wrapped: false, coinsCollected: [], turtleCollected: false,
     slowdownActive: false,
   };
 }
