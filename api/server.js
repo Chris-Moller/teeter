@@ -29,6 +29,15 @@ const MAX_SCORE_VALUE = 999999;
 //     2. Add server-side anti-cheat heuristics (score plausibility checks).
 //     3. Use an external datastore with per-user auth for competitive use.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
+if (!SCORE_API_KEY && NODE_ENV === 'production') {
+  console.error(
+    'FATAL: SCORE_API_KEY is required in production. ' +
+    'Set the SCORE_API_KEY environment variable to a strong secret before starting the server.'
+  );
+  process.exit(1);
+}
 
 if (!SCORE_API_KEY) {
   console.warn(
