@@ -11,38 +11,34 @@ const MAX_NAME_LENGTH = 15;
 const MAX_SCORE_VALUE = 999999;
 
 // --- Authentication & Threat Model ---
-// SCORE_API_KEY (env var): When set, POST /api/scores requires an
-// "X-API-Key" header matching this value. PRODUCTION DEPLOYMENTS SHOULD
-// SET THIS to restrict who can submit scores and reduce anonymous abuse.
+// Auth model: anonymous submissions by design.
 //
-// Threat model for public leaderboard integrity:
+// The browser game client (js/main.js) submits scores via fetch('/api/scores')
+// without credentials. Since the client is public JS, embedding an API key
+// would provide no real security (any user can read it from DevTools).
+//
+// Defense-in-depth layers that protect the leaderboard without auth:
 // - Rate limiting (5 POST/min/IP) bounds casual abuse volume.
 // - Body-size cap (1024 B) and input validation reject malformed payloads.
 // - Server binds to 127.0.0.1 only; nginx proxies external traffic and
 //   sets X-Real-IP, so clients cannot spoof their IP directly.
 // - CORS headers are not sent, so cross-origin browser requests are blocked.
 // - CSP connect-src 'self' prevents scripts on other origins from hitting /api.
-// - Without SCORE_API_KEY, a determined user with curl can still submit
-//   scores. This is acceptable for a casual game leaderboard but operators
-//   who need stronger anti-abuse should:
-//     1. Set SCORE_API_KEY and distribute it to the game client securely.
-//     2. Add server-side anti-cheat heuristics (score plausibility checks).
-//     3. Use an external datastore with per-user auth for competitive use.
+// - Score plausibility: positive integers only, capped at MAX_SCORE_VALUE.
+//
+// SCORE_API_KEY (env var): Optional. When set, POST /api/scores requires a
+// matching "X-API-Key" header. This is useful for server-to-server integrations
+// or if the operator adds a backend proxy that injects the key. It is NOT
+// required for the default browser-based deployment.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
-const NODE_ENV = process.env.NODE_ENV || 'development';
 
-if (!SCORE_API_KEY && NODE_ENV === 'production') {
-  console.error(
-    'FATAL: SCORE_API_KEY is required in production. ' +
-    'Set the SCORE_API_KEY environment variable to a strong secret before starting the server.'
-  );
-  process.exit(1);
-}
-
-if (!SCORE_API_KEY) {
-  console.warn(
-    'WARN: SCORE_API_KEY is not set — POST /api/scores accepts anonymous submissions. ' +
-    'Set SCORE_API_KEY in production to require X-API-Key header on score submissions.'
+if (SCORE_API_KEY) {
+  console.log('INFO: SCORE_API_KEY is set — POST /api/scores requires X-API-Key header.');
+} else {
+  console.log(
+    'INFO: SCORE_API_KEY is not set — POST /api/scores accepts anonymous submissions. ' +
+    'This is the expected configuration for browser-based deployments. ' +
+    'Set SCORE_API_KEY to require X-API-Key header for server-to-server use.'
   );
 }
 

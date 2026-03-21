@@ -427,6 +427,74 @@ async function run() {
     try { fs.rmSync(akDir, { recursive: true }); } catch {}
   });
 
+  // --- Production mode without API key (anonymous by design) ---
+  await test('Server starts and accepts POST in production without SCORE_API_KEY', async () => {
+    const prodPort = PORT + 3;
+    const prodDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-prod-'));
+    const prodPatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${prodPort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${prodDir.replace(/\\/g, '/')}';`)
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;');
+    const prodPath = path.join(prodDir, 'server.prod.js');
+    fs.writeFileSync(prodPath, prodPatched);
+
+    // Spawn with NODE_ENV=production and NO SCORE_API_KEY
+    const prodEnv = { ...process.env };
+    delete prodEnv.SCORE_API_KEY;
+    prodEnv.NODE_ENV = 'production';
+    const prodProc = spawn(process.execPath, [prodPath], {
+      stdio: 'pipe',
+      env: prodEnv,
+    });
+    prodProc.stderr.on('data', () => {});
+    prodProc.stdout.on('data', () => {});
+
+    // Wait for server to start
+    let started = false;
+    for (let i = 0; i < 20; i++) {
+      try {
+        await new Promise((resolve, reject) => {
+          const req = http.request({ hostname: '127.0.0.1', port: prodPort, path: '/api/health', method: 'GET' }, (res) => {
+            res.on('data', () => {});
+            res.on('end', () => resolve());
+          });
+          req.on('error', reject);
+          req.end();
+        });
+        started = true;
+        break;
+      } catch {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+    assert.ok(started, 'Server should start in production without SCORE_API_KEY');
+
+    // POST should succeed (anonymous submission)
+    const postRes = await new Promise((resolve, reject) => {
+      const data = JSON.stringify({ name: 'ProdUser', score: 55 });
+      const req = http.request({
+        hostname: '127.0.0.1', port: prodPort, path: '/api/scores', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => {
+          let json; try { json = JSON.parse(chunks); } catch { json = chunks; }
+          resolve({ status: r.statusCode, body: json });
+        });
+      });
+      req.on('error', reject);
+      req.write(data);
+      req.end();
+    });
+    assert.strictEqual(postRes.status, 201, 'Expected 201 for anonymous POST in production');
+    assert.ok(Array.isArray(postRes.body), 'Expected array response');
+    assert.strictEqual(postRes.body[0].name, 'ProdUser');
+
+    prodProc.kill('SIGTERM');
+    try { fs.rmSync(prodDir, { recursive: true }); } catch {}
+  });
+
   // --- Concurrent write integrity test ---
   await test('Concurrent POSTs do not lose updates', async () => {
     // Reset scores file to empty state

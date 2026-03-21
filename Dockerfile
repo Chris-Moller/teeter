@@ -22,9 +22,10 @@ RUN nginx -t
 # Persistent storage for scores.json. Operators should back up this volume
 # according to their retention policy; data is non-critical (game scores).
 VOLUME /data
-# SCORE_API_KEY: POST /api/scores requires a matching X-API-Key header.
-# REQUIRED in production (NODE_ENV=production) — the server will refuse to
-# start without it.  Example: docker run -e NODE_ENV=production -e SCORE_API_KEY=<secret> ...
+# SCORE_API_KEY: Optional. When set, POST /api/scores requires a matching
+# X-API-Key header. Not required for the default browser-based deployment
+# (the game client submits scores anonymously, protected by rate limiting,
+# input validation, and CSP/CORS restrictions).
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/api/health || exit 1
