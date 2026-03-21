@@ -43,11 +43,13 @@ const MAX_SCORE_VALUE = 999999;
 // - CSP connect-src 'self' prevents scripts on other origins from hitting /api.
 // - Score plausibility: positive integers only, capped at MAX_SCORE_VALUE.
 //
-// SCORE_API_KEY (env var): Optional for browser-based deployments (the
-// default). When set, POST /api/scores additionally requires a matching
-// "X-API-Key" header. Use this when:
-// - Deploying behind a backend proxy that can inject the key, or
-// - Exposing the API for server-to-server integrations.
+// SCORE_API_KEY (env var): Optional for local/demo deployments, recommended
+// for production. When set, POST /api/scores additionally requires a matching
+// "X-API-Key" header. Production policy:
+//   - Set SCORE_API_KEY via environment variable (docker -e or compose env).
+//   - Route browser submissions through a backend proxy that authenticates
+//     users and injects the key into forwarded requests.
+//   - For server-to-server integrations, pass the key directly in X-API-Key.
 // When unset, the challenge-token + rate-limit + cooldown controls provide
 // sufficient abuse resistance for a casual game leaderboard.
 //
@@ -94,7 +96,10 @@ if (SCORE_API_KEY) {
 
 // Rate limiting: max POST requests per IP within a sliding window.
 // 3 POSTs/min/IP is sufficient for a game leaderboard (one score per
-// completed game) and limits abuse surface.
+// completed game) and limits abuse surface. Combined with the 10s per-IP
+// cooldown and one-time challenge tokens, effective throughput is bounded
+// to ~6 scores/min/IP at most, which is adequate for the expected
+// single-instance casual game deployment.
 // Note: in-memory state resets on server restart. This is acceptable because
 // the bounded restart loop in start.sh (max 5 restarts/60s) limits how
 // often the counter resets, and the threat model is casual abuse, not DDoS.
