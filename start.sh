@@ -20,7 +20,10 @@ mkdir -p /data
     fi
 
     if [ "$failures" -ge "$MAX_FAILURES" ]; then
-      echo "Node API crashed $MAX_FAILURES times in rapid succession (last exit=$exit_code); giving up." >&2
+      echo "CRITICAL: Node API crashed $MAX_FAILURES times in rapid succession (last exit=$exit_code); giving up." >&2
+      # Write a marker file so the healthcheck (or an external monitor) can
+      # detect that the API is permanently down, not just temporarily restarting.
+      echo "crashed at $(date -Iseconds) after $MAX_FAILURES consecutive rapid failures (last exit=$exit_code)" > /data/api-crash.log
       break
     fi
 
