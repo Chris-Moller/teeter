@@ -6,9 +6,15 @@ FROM nginx:1.27-alpine3.21
 # verified by apk's built-in signature checking against /etc/apk/keys.
 # No npm/npx or third-party package managers are used — only Node.js stdlib modules.
 # The build will fail if the 22.x package is unavailable, preventing silent downgrades.
+#
+# Update cadence: review and bump the Node.js pin when:
+#   - A new Node.js 22.x patch is released with security fixes, OR
+#   - The base nginx:1.27-alpine3.21 image is updated.
+# To lock to a specific patch version, replace 'nodejs~=22' with e.g. 'nodejs=22.13.1-r0'.
 RUN apk add --no-cache 'nodejs~=22' \
- && node --version \
- && echo "Node.js $(node -e "process.stdout.write(process.version)") installed from Alpine repos"
+ && NODE_VER="$(node -e "process.stdout.write(process.version)")" \
+ && echo "Node.js ${NODE_VER} installed from Alpine repos" \
+ && echo "${NODE_VER}" | grep -qE '^v22\.' || { echo "ERROR: expected Node.js v22.x, got ${NODE_VER}"; exit 1; }
 RUN rm -rf /usr/share/nginx/html/*
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY index.html /usr/share/nginx/html/
