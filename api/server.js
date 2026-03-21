@@ -12,7 +12,7 @@ const MAX_SCORE_VALUE = 999999;
 
 // Rate limiting: max POST requests per IP within a sliding window
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const RATE_LIMIT_MAX_POSTS = 5; // 5 POSTs per minute per IP
+const RATE_LIMIT_MAX_POSTS = 10; // 10 POSTs per minute per IP
 const rateLimitMap = new Map();
 
 function isRateLimited(ip) {
