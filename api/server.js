@@ -78,14 +78,27 @@ const MAX_SCORE_VALUE = 999999;
 // To enforce authenticated submissions, set SCORE_API_KEY and route
 // traffic through a backend proxy that injects the key after user auth.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// Production guardrail: require SCORE_API_KEY in production to prevent
+// misconfigured deployments from exposing an anonymous write endpoint.
+if (NODE_ENV === 'production' && !SCORE_API_KEY) {
+  console.error(
+    'FATAL: NODE_ENV=production but SCORE_API_KEY is not set. ' +
+    'Production deployments MUST set SCORE_API_KEY to prevent anonymous score submissions. ' +
+    'Set SCORE_API_KEY via environment variable (docker -e or compose env). ' +
+    'For local/demo use, set NODE_ENV=development or leave it unset.'
+  );
+  process.exit(1);
+}
 
 if (SCORE_API_KEY) {
   console.log('INFO: SCORE_API_KEY is set — POST /api/scores requires X-API-Key header.');
 } else {
   console.log(
     'INFO: SCORE_API_KEY is not set — POST /api/scores accepts anonymous submissions. ' +
-    'This is the expected configuration for browser-based deployments. ' +
-    'Set SCORE_API_KEY to require X-API-Key header for server-to-server use.'
+    'This is the expected configuration for local/demo browser-based deployments. ' +
+    'For production, set NODE_ENV=production and SCORE_API_KEY to enforce authentication.'
   );
 }
 

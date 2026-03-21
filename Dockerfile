@@ -33,12 +33,15 @@ RUN nginx -t
 # Persistent storage for scores.json. Operators should back up this volume
 # according to their retention policy; data is non-critical (game scores).
 VOLUME /data
-# SCORE_API_KEY: Optional for local/demo use, recommended for production.
+# SCORE_API_KEY: Required in production (NODE_ENV=production), optional for local/demo.
+# The server refuses to start in production mode without SCORE_API_KEY set.
 # When set, POST /api/scores requires a matching X-API-Key header.
-# Production policy: set SCORE_API_KEY via docker run -e or compose env
-# and route submissions through a backend proxy that injects the key
-# after authenticating users. When unset (default), the endpoint relies
-# on challenge tokens, rate limiting, cooldown, and CORS/CSP restrictions.
+# Production deployment: set both NODE_ENV=production and SCORE_API_KEY via
+# docker run -e or compose env, and route submissions through a backend
+# proxy that injects the key after authenticating users.
+# For local/demo use, leave NODE_ENV unset (defaults to development) — the
+# endpoint then relies on challenge tokens, rate limiting, cooldown, and
+# CORS/CSP restrictions.
 EXPOSE 8080
 # Health check verifies both nginx and API backend are up.
 # If the crash sentinel (/tmp/api_crash_exhausted) exists, the API has
