@@ -97,6 +97,15 @@ function sendError(res, statusCode, message) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
+  // Deny CORS preflight — no Access-Control-Allow-Origin header is sent,
+  // so browsers will block cross-origin requests. This is defense-in-depth
+  // alongside nginx proxy and CSP connect-src: 'self'.
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   if (url.pathname === '/api/health') {
     sendJSON(res, 200, { status: 'ok' });
     return;
