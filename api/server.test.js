@@ -484,8 +484,8 @@ async function run() {
     try { fs.rmSync(akDir, { recursive: true }); } catch {}
   });
 
-  // --- Production mode without API key ---
-  await test('Server starts and accepts POST in production without SCORE_API_KEY', async () => {
+  // --- Production mode guardrails ---
+  await test('Server refuses to start in production without SCORE_API_KEY', async () => {
     const prodPort = PORT + 3;
     const prodDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-prod-'));
     const prodPatched = serverSrc
@@ -503,16 +503,50 @@ async function run() {
       stdio: 'pipe',
       env: prodEnv,
     });
+
+    let stderrOutput = '';
+    prodProc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
+    prodProc.stdout.on('data', () => {});
+
+    // Server should exit with non-zero code
+    const exitCode = await new Promise((resolve) => {
+      prodProc.on('exit', (code) => resolve(code));
+    });
+
+    assert.notStrictEqual(exitCode, 0, 'Expected non-zero exit code in production without SCORE_API_KEY');
+    assert.ok(stderrOutput.includes('SCORE_API_KEY'), 'Expected error message mentioning SCORE_API_KEY');
+    try { fs.rmSync(prodDir, { recursive: true }); } catch {}
+  });
+
+  await test('Server starts in production with SCORE_API_KEY set', async () => {
+    const prodPort = PORT + 3;
+    const prodDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-prod2-'));
+    const prodPatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${prodPort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${prodDir.replace(/\\/g, '/')}';`)
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;');
+    const prodPath = path.join(prodDir, 'server.prod2.js');
+    fs.writeFileSync(prodPath, prodPatched);
+
+    const prodProc = spawn(process.execPath, [prodPath], {
+      stdio: 'pipe',
+      env: { ...process.env, NODE_ENV: 'production', SCORE_API_KEY: 'prod-test-key' },
+    });
     prodProc.stderr.on('data', () => {});
     prodProc.stdout.on('data', () => {});
 
     await waitForPort(prodPort);
 
-    // POST should succeed with challenge token
-    const postRes = await postWithChallenge(prodPort, { name: 'ProdUser', score: 55 });
-    assert.strictEqual(postRes.status, 201, 'Expected 201 for POST in production with challenge');
+    // POST with correct key should succeed
+    const postRes = await postWithChallenge(prodPort, { name: 'ProdUser', score: 55 }, { 'X-API-Key': 'prod-test-key' });
+    assert.strictEqual(postRes.status, 201, 'Expected 201 for POST in production with API key');
     assert.ok(Array.isArray(postRes.body), 'Expected array response');
     assert.strictEqual(postRes.body[0].name, 'ProdUser');
+
+    // POST without key should be rejected
+    const noKeyRes = await postWithChallenge(prodPort, { name: 'NoKey', score: 10 });
+    assert.strictEqual(noKeyRes.status, 401, 'Expected 401 without API key in production');
 
     prodProc.kill('SIGTERM');
     try { fs.rmSync(prodDir, { recursive: true }); } catch {}
