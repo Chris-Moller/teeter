@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const PORT = 3001;
 const DATA_DIR = '/data';
@@ -11,13 +12,15 @@ const MAX_NAME_LENGTH = 15;
 const MAX_SCORE_VALUE = 999999;
 
 // --- Authentication & Threat Model ---
-// Auth model: anonymous submissions by design.
+// Auth model: server-issued challenge tokens for write integrity.
 //
-// The browser game client (js/main.js) submits scores via fetch('/api/scores')
-// without credentials. Since the client is public JS, embedding an API key
-// would provide no real security (any user can read it from DevTools).
+// The browser game client requests a one-time challenge token from
+// GET /api/challenge before submitting a score. POST /api/scores requires
+// a valid, unexpired token — this prevents automated replay attacks and
+// ensures each submission was preceded by a server interaction.
 //
-// Defense-in-depth layers that protect the leaderboard without auth:
+// Defense-in-depth layers that protect the leaderboard:
+// - Challenge tokens: one-time-use, IP-bound, expire after 5 minutes.
 // - Rate limiting (3 POST/min/IP) bounds casual abuse volume.
 // - Per-IP cooldown (10s between successful submissions) prevents rapid-fire.
 // - Duplicate detection rejects exact name+score replays already on the board.
@@ -29,9 +32,9 @@ const MAX_SCORE_VALUE = 999999;
 // - Score plausibility: positive integers only, capped at MAX_SCORE_VALUE.
 //
 // SCORE_API_KEY (env var): Optional. When set, POST /api/scores requires a
-// matching "X-API-Key" header. This is useful for server-to-server integrations
-// or if the operator adds a backend proxy that injects the key. It is NOT
-// required for the default browser-based deployment.
+// matching "X-API-Key" header in addition to the challenge token. This is
+// useful for server-to-server integrations or if the operator adds a backend
+// proxy that injects the key.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
 
 if (SCORE_API_KEY) {
@@ -64,6 +67,37 @@ const rateLimitMap = new Map();
 const SCORE_COOLDOWN_MS = 10 * 1000; // 10 seconds
 const lastSubmitMap = new Map();
 
+// --- Challenge Token System ---
+// One-time-use tokens issued by GET /api/challenge, required for POST /api/scores.
+// Tokens are bound to the requesting IP and expire after CHALLENGE_TTL_MS.
+// This prevents automated score submission without first interacting with the server.
+const CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const challengeMap = new Map(); // token -> { ip, expires }
+const MAX_CHALLENGES_PER_IP = 5;
+
+function issueChallenge(ip) {
+  // Enforce per-IP limit to prevent memory exhaustion from challenge farming
+  let count = 0;
+  for (const entry of challengeMap.values()) {
+    if (entry.ip === ip) count++;
+  }
+  if (count >= MAX_CHALLENGES_PER_IP) {
+    return null;
+  }
+  const token = crypto.randomBytes(24).toString('hex');
+  challengeMap.set(token, { ip, expires: Date.now() + CHALLENGE_TTL_MS });
+  return token;
+}
+
+function consumeChallenge(token, ip) {
+  const entry = challengeMap.get(token);
+  if (!entry) return false;
+  challengeMap.delete(token); // one-time use
+  if (entry.ip !== ip) return false;
+  if (Date.now() > entry.expires) return false;
+  return true;
+}
+
 function isRateLimited(ip) {
   const now = Date.now();
   let entry = rateLimitMap.get(ip);
@@ -82,7 +116,7 @@ function isRateLimited(ip) {
   return false;
 }
 
-// Periodically clean up stale rate-limit and cooldown entries to prevent memory leak
+// Periodically clean up stale rate-limit, cooldown, and challenge entries
 setInterval(() => {
   const now = Date.now();
   for (const [ip, timestamps] of rateLimitMap) {
@@ -93,6 +127,9 @@ setInterval(() => {
   }
   for (const [ip, ts] of lastSubmitMap) {
     if (ts <= now - SCORE_COOLDOWN_MS) lastSubmitMap.delete(ip);
+  }
+  for (const [token, entry] of challengeMap) {
+    if (now > entry.expires) challengeMap.delete(token);
   }
 }, RATE_LIMIT_WINDOW_MS).unref();
 
@@ -158,6 +195,21 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Issue a one-time challenge token for score submission.
+  // The client must GET /api/challenge first, then include the token in POST /api/scores.
+  if (url.pathname === '/api/challenge' && req.method === 'GET') {
+    const peerIp = req.socket.remoteAddress || '';
+    const isLoopback = peerIp === '127.0.0.1' || peerIp === '::1' || peerIp === '::ffff:127.0.0.1';
+    const clientIp = (isLoopback && req.headers['x-real-ip']) ? req.headers['x-real-ip'] : peerIp || 'unknown';
+    const token = issueChallenge(clientIp);
+    if (!token) {
+      sendError(res, 429, 'Too many pending challenges');
+      return;
+    }
+    sendJSON(res, 200, { token });
+    return;
+  }
+
   if (url.pathname !== '/api/scores') {
     sendError(res, 404, 'Not found');
     return;
@@ -185,6 +237,13 @@ const server = http.createServer((req, res) => {
     // Enforce API key when configured (defense-in-depth against anonymous abuse)
     if (SCORE_API_KEY && req.headers['x-api-key'] !== SCORE_API_KEY) {
       sendError(res, 401, 'Invalid or missing API key');
+      return;
+    }
+
+    // Validate challenge token (required for write integrity)
+    const challengeToken = req.headers['x-challenge-token'] || '';
+    if (!challengeToken || !consumeChallenge(challengeToken, clientIp)) {
+      sendError(res, 403, 'Missing or invalid challenge token. GET /api/challenge first.');
       return;
     }
 

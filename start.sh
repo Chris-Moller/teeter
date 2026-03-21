@@ -5,6 +5,10 @@ chmod 700 /data
 
 MAX_RETRIES=5
 RETRY_WINDOW=60
+CRASH_SENTINEL="/tmp/api_crash_exhausted"
+
+# Remove stale sentinel from previous runs
+rm -f "$CRASH_SENTINEL"
 
 # Start Node API in the background with bounded restarts.
 # Gives up after MAX_RETRIES failures within RETRY_WINDOW seconds to
@@ -32,10 +36,9 @@ RETRY_WINDOW=60
 
     if [ "$failures" -ge "$MAX_RETRIES" ]; then
       echo "ERROR: Node API crashed $MAX_RETRIES times within ${RETRY_WINDOW}s — giving up. Leaderboard API is unavailable." >&2
+      echo "ERROR: Container HEALTHCHECK will now fail. Orchestrator should restart/alert." >&2
       # Write sentinel so external health checks can detect API crash-loop exhaustion.
-      # The Docker HEALTHCHECK already fails because nginx returns 502 for /api/health
-      # when the API backend is down, but this file provides an additional signal.
-      echo "API_CRASHED=$(date -Iseconds) failures=$MAX_RETRIES window=${RETRY_WINDOW}s" > /tmp/api_crash_exhausted
+      echo "API_CRASHED=$(date -Iseconds) failures=$MAX_RETRIES window=${RETRY_WINDOW}s exit_code=$exit_code" > "$CRASH_SENTINEL"
       break
     fi
 
