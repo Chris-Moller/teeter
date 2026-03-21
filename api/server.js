@@ -60,7 +60,19 @@ function readScores() {
 
 function writeScores(scores) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(SCORES_FILE, JSON.stringify(scores), 'utf8');
+  // Atomic write: write to temp file then rename to prevent corruption
+  const tmpFile = SCORES_FILE + '.tmp';
+  fs.writeFileSync(tmpFile, JSON.stringify(scores), 'utf8');
+  fs.renameSync(tmpFile, SCORES_FILE);
+}
+
+// Serializes write operations so concurrent POSTs cannot lose updates.
+// Each call to withWriteLock(fn) waits for the previous write to finish
+// before executing fn, ensuring read-modify-write is atomic.
+let _writeLock = Promise.resolve();
+function withWriteLock(fn) {
+  _writeLock = _writeLock.then(fn, fn);
+  return _writeLock;
 }
 
 function sendJSON(res, statusCode, data) {
@@ -91,9 +103,13 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'POST') {
-    // Trust X-Real-IP set by our nginx reverse proxy to avoid
-    // rate-limiting all clients as a single shared proxy address
-    const clientIp = req.headers['x-real-ip'] || req.socket.remoteAddress || 'unknown';
+    // Only trust X-Real-IP when the connection originates from loopback
+    // (i.e. from our nginx reverse proxy). The server binds to 127.0.0.1
+    // so all legitimate connections are loopback, but this guard defends
+    // against misconfiguration where the server is exposed directly.
+    const peerIp = req.socket.remoteAddress || '';
+    const isLoopback = peerIp === '127.0.0.1' || peerIp === '::1' || peerIp === '::ffff:127.0.0.1';
+    const clientIp = (isLoopback && req.headers['x-real-ip']) ? req.headers['x-real-ip'] : peerIp || 'unknown';
     if (isRateLimited(clientIp)) {
       sendError(res, 429, 'Too many requests. Try again later.');
       return;
@@ -146,12 +162,14 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      const scores = readScores();
-      scores.push({ name, score });
-      scores.sort((a, b) => b.score - a.score);
-      const trimmed = scores.slice(0, MAX_SCORES);
-      writeScores(trimmed);
-      sendJSON(res, 201, trimmed);
+      withWriteLock(() => {
+        const scores = readScores();
+        scores.push({ name, score });
+        scores.sort((a, b) => b.score - a.score);
+        const trimmed = scores.slice(0, MAX_SCORES);
+        writeScores(trimmed);
+        sendJSON(res, 201, trimmed);
+      });
     });
 
     return;
