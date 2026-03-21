@@ -50,6 +50,31 @@ const MAX_SCORE_VALUE = 999999;
 // - Exposing the API for server-to-server integrations.
 // When unset, the challenge-token + rate-limit + cooldown controls provide
 // sufficient abuse resistance for a casual game leaderboard.
+//
+// --- Operational monitoring thresholds ---
+// Monitor these indicators to detect abuse or misconfiguration:
+//   - Rate-limit 429 responses > 50/min → possible automated abuse
+//   - Challenge 429 responses (farming) → bot probing for tokens
+//   - 413 responses > 10/min → payload-stuffing attack
+//   - scores.json file size growing beyond ~10KB → leak in MAX_SCORES enforcement
+//   - Server restart count (logged by start.sh) > 3/hour → crash loop
+// Use container log aggregation (stdout/stderr) for alerting. The server
+// logs rate-limit events and challenge rejections to stderr.
+//
+// --- Security acceptance: anonymous write endpoint ---
+// ACCEPTED RISK: POST /api/scores is intentionally anonymous to support
+// browser-based gameplay without user accounts. This design decision was
+// reviewed and accepted with the following mitigations in place:
+//   1. Challenge tokens (one-time, IP-bound, 5-min TTL, max 5 pending/IP)
+//   2. Rate limiting (3 POST/min/IP)
+//   3. Per-IP cooldown (10s between successful submissions)
+//   4. Duplicate detection (exact name+score replay rejected)
+//   5. Input validation (name length, score range, body size cap)
+//   6. CORS denial (no Access-Control-Allow-Origin header)
+//   7. CSP connect-src: 'self' (blocks cross-origin script access)
+//   8. Server binds 127.0.0.1 only (nginx proxy required)
+// To enforce authenticated submissions, set SCORE_API_KEY and route
+// traffic through a backend proxy that injects the key after user auth.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
 
 if (SCORE_API_KEY) {
