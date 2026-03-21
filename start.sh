@@ -4,14 +4,15 @@ chown appuser:appuser /data
 chmod 700 /data
 
 # --- Deployment validation ---
-# Enforce SCORE_API_KEY in production unless ALLOW_ANONYMOUS_SCORES=true.
-# This prevents accidental deployment of an unauthenticated write endpoint.
+# Warn if SCORE_API_KEY is missing in production. The Node.js server enforces
+# its own startup check (process.exit(1)), so we only warn here to allow nginx
+# to still serve the static game even if the API cannot start. The API supervisor
+# loop below will log the server's FATAL error and retry per the crash-budget policy.
 if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ] && [ "$ALLOW_ANONYMOUS_SCORES" != "true" ]; then
-  echo "FATAL: NODE_ENV=production but SCORE_API_KEY is not set." >&2
-  echo "Refusing to start with an unauthenticated write endpoint in production." >&2
-  echo "Fix: set SCORE_API_KEY via 'docker run -e' or compose env, or explicitly" >&2
-  echo "opt in to anonymous submissions with ALLOW_ANONYMOUS_SCORES=true." >&2
-  exit 1
+  echo "WARNING: NODE_ENV=production but SCORE_API_KEY is not set." >&2
+  echo "The API server will refuse to start. Set SCORE_API_KEY via 'docker run -e'" >&2
+  echo "or compose env, or opt in to anonymous submissions with ALLOW_ANONYMOUS_SCORES=true." >&2
+  echo "nginx will continue serving the static game with localStorage-only leaderboard." >&2
 fi
 
 if [ "$NODE_ENV" = "production" ] && [ -z "$SCORE_API_KEY" ] && [ "$ALLOW_ANONYMOUS_SCORES" = "true" ]; then

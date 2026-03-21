@@ -315,11 +315,18 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Enforce API key when configured (defense-in-depth against anonymous abuse)
-    if (SCORE_API_KEY && req.headers['x-api-key'] !== SCORE_API_KEY) {
-      console.error(`MONITOR: 401 invalid-api-key ip=${clientIp}`);
-      sendError(res, 401, 'Invalid or missing API key');
-      return;
+    // Enforce API key when configured (defense-in-depth against anonymous abuse).
+    // Uses crypto.timingSafeEqual to prevent timing side-channel leaks.
+    if (SCORE_API_KEY) {
+      const provided = req.headers['x-api-key'] || '';
+      const expected = SCORE_API_KEY;
+      const providedBuf = Buffer.from(provided);
+      const expectedBuf = Buffer.from(expected);
+      if (providedBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(providedBuf, expectedBuf)) {
+        console.error(`MONITOR: 401 invalid-api-key ip=${clientIp}`);
+        sendError(res, 401, 'Invalid or missing API key');
+        return;
+      }
     }
 
     // Validate challenge token (required for write integrity)
