@@ -10,9 +10,24 @@ const MAX_BODY = 1024;
 const MAX_NAME_LENGTH = 15;
 const MAX_SCORE_VALUE = 999999;
 
-// Optional API key for score submission. When set via SCORE_API_KEY env var,
-// POST requests must include an "X-API-Key" header matching this value.
-// When unset, submissions are open (protected only by rate limiting + CORS).
+// --- Authentication & Threat Model ---
+// SCORE_API_KEY (env var): When set, POST /api/scores requires an
+// "X-API-Key" header matching this value. PRODUCTION DEPLOYMENTS SHOULD
+// SET THIS to restrict who can submit scores and reduce anonymous abuse.
+//
+// Threat model for public leaderboard integrity:
+// - Rate limiting (5 POST/min/IP) bounds casual abuse volume.
+// - Body-size cap (1024 B) and input validation reject malformed payloads.
+// - Server binds to 127.0.0.1 only; nginx proxies external traffic and
+//   sets X-Real-IP, so clients cannot spoof their IP directly.
+// - CORS headers are not sent, so cross-origin browser requests are blocked.
+// - CSP connect-src 'self' prevents scripts on other origins from hitting /api.
+// - Without SCORE_API_KEY, a determined user with curl can still submit
+//   scores. This is acceptable for a casual game leaderboard but operators
+//   who need stronger anti-abuse should:
+//     1. Set SCORE_API_KEY and distribute it to the game client securely.
+//     2. Add server-side anti-cheat heuristics (score plausibility checks).
+//     3. Use an external datastore with per-user auth for competitive use.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
 
 // Deployment model: this server is designed for single-instance deployments
