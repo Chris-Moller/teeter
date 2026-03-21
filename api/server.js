@@ -60,9 +60,10 @@ function readScores() {
 
 function writeScores(scores) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  // Atomic write: write to temp file then rename to prevent corruption
+  // Atomic write: write to temp file then rename to prevent corruption.
+  // Mode 0o600 restricts the file to owner-only read/write.
   const tmpFile = SCORES_FILE + '.tmp';
-  fs.writeFileSync(tmpFile, JSON.stringify(scores), 'utf8');
+  fs.writeFileSync(tmpFile, JSON.stringify(scores), { encoding: 'utf8', mode: 0o600 });
   fs.renameSync(tmpFile, SCORES_FILE);
 }
 
