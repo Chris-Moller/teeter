@@ -110,9 +110,20 @@ async function loadScoresAsync() {
 
 async function addScoreAsync(name, value) {
   try {
+    // Obtain a one-time challenge token before submitting (write integrity)
+    const challengeRes = await fetchWithTimeout('/api/challenge');
+    if (!challengeRes.ok) {
+      console.warn('Failed to obtain challenge token:', challengeRes.status);
+      return cachedScores.length ? cachedScores : loadLocalScores();
+    }
+    const { token } = await challengeRes.json();
+
     const res = await fetchWithTimeout('/api/scores', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Challenge-Token': token,
+      },
       body: JSON.stringify({ name, score: value }),
     });
     if (!res.ok) {

@@ -17,14 +17,76 @@ let tmpDir;
 let passed = 0;
 let failed = 0;
 
-function request(method, body) {
+// Obtain a challenge token from the server (required for POST /api/scores)
+function getChallenge(port) {
+  port = port || PORT;
+  return new Promise((resolve, reject) => {
+    const req = http.request({ hostname: '127.0.0.1', port, path: '/api/challenge', method: 'GET' }, (res) => {
+      let chunks = '';
+      res.on('data', (c) => (chunks += c));
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(chunks);
+          resolve(json.token);
+        } catch {
+          reject(new Error('Failed to parse challenge token'));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function request(method, body, extraHeaders) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const options = {
+        hostname: '127.0.0.1',
+        port: PORT,
+        path: '/api/scores',
+        method,
+        headers: { ...(extraHeaders || {}) },
+      };
+      // For POST requests, automatically obtain a challenge token
+      if (method === 'POST' && !options.headers['X-Challenge-Token']) {
+        const token = await getChallenge();
+        options.headers['X-Challenge-Token'] = token;
+      }
+      if (body !== undefined) {
+        const data = typeof body === 'string' ? body : JSON.stringify(body);
+        options.headers['Content-Type'] = 'application/json';
+        options.headers['Content-Length'] = Buffer.byteLength(data);
+      }
+      const req = http.request(options, (res) => {
+        let chunks = '';
+        res.on('data', (c) => (chunks += c));
+        res.on('end', () => {
+          let json;
+          try { json = JSON.parse(chunks); } catch { json = chunks; }
+          resolve({ status: res.statusCode, body: json });
+        });
+      });
+      req.on('error', reject);
+      if (body !== undefined) {
+        req.write(typeof body === 'string' ? body : JSON.stringify(body));
+      }
+      req.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+// POST without automatically obtaining a challenge token (for testing token enforcement)
+function requestNoChallenge(method, body, extraHeaders) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: '127.0.0.1',
       port: PORT,
       path: '/api/scores',
       method,
-      headers: {},
+      headers: { ...(extraHeaders || {}) },
     };
     if (body !== undefined) {
       const data = typeof body === 'string' ? body : JSON.stringify(body);
@@ -88,6 +150,61 @@ async function waitForServer(retries = 20, delay = 200) {
   throw new Error('Server did not start');
 }
 
+function waitForPort(port, retries, delay) {
+  retries = retries || 20;
+  delay = delay || 200;
+  return new Promise(async (resolve, reject) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await new Promise((res, rej) => {
+          const req = http.request({ hostname: '127.0.0.1', port, path: '/api/health', method: 'GET' }, (r) => {
+            r.on('data', () => {});
+            r.on('end', () => res());
+          });
+          req.on('error', rej);
+          req.end();
+        });
+        return resolve();
+      } catch {
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    reject(new Error('Server on port ' + port + ' did not start'));
+  });
+}
+
+// Helper: POST to a specific port with challenge token
+function postWithChallenge(port, body, extraHeaders) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const token = await getChallenge(port);
+      const data = JSON.stringify(body);
+      const headers = {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(data),
+        'X-Challenge-Token': token,
+        ...(extraHeaders || {}),
+      };
+      const req = http.request({
+        hostname: '127.0.0.1', port, path: '/api/scores', method: 'POST', headers,
+      }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => {
+          let json;
+          try { json = JSON.parse(chunks); } catch { json = chunks; }
+          resolve({ status: r.statusCode, body: json });
+        });
+      });
+      req.on('error', reject);
+      req.write(data);
+      req.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 async function run() {
   // Create temp data directory
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-test-'));
@@ -98,7 +215,8 @@ async function run() {
     .replace(/const PORT = \d+;/, `const PORT = ${PORT};`)
     .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${tmpDir.replace(/\\/g, '/')}';`)
     .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
-    .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;');
+    .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;')
+    .replace(/const MAX_CHALLENGES_PER_IP = \d+;/, 'const MAX_CHALLENGES_PER_IP = 100;');
   const patchedPath = path.join(tmpDir, 'server.patched.js');
   fs.writeFileSync(patchedPath, patched);
 
@@ -121,6 +239,34 @@ async function run() {
   await test('GET /unknown returns 404', async () => {
     const res = await requestRaw('GET', '/unknown');
     assert.strictEqual(res.status, 404);
+  });
+
+  // --- Challenge token tests ---
+  await test('GET /api/challenge returns a token', async () => {
+    const token = await getChallenge();
+    assert.ok(typeof token === 'string', 'Token should be a string');
+    assert.ok(token.length > 0, 'Token should not be empty');
+  });
+
+  await test('POST without challenge token returns 403', async () => {
+    const res = await requestNoChallenge('POST', { name: 'NoToken', score: 10 });
+    assert.strictEqual(res.status, 403, 'Expected 403 without challenge token');
+    assert.ok(res.body.error.includes('challenge'), 'Expected challenge error message');
+  });
+
+  await test('POST with invalid challenge token returns 403', async () => {
+    const res = await requestNoChallenge('POST', { name: 'BadToken', score: 10 }, { 'X-Challenge-Token': 'invalid-token-value' });
+    assert.strictEqual(res.status, 403, 'Expected 403 with invalid token');
+  });
+
+  await test('Challenge token cannot be reused (one-time-use)', async () => {
+    const token = await getChallenge();
+    // First use — should succeed
+    const first = await requestNoChallenge('POST', { name: 'Reuse1', score: 10 }, { 'X-Challenge-Token': token });
+    assert.strictEqual(first.status, 201, 'First use should succeed');
+    // Second use of same token — should be rejected
+    const second = await requestNoChallenge('POST', { name: 'Reuse2', score: 20 }, { 'X-Challenge-Token': token });
+    assert.strictEqual(second.status, 403, 'Reused token should be rejected');
   });
 
   // --- POST validation tests ---
@@ -164,6 +310,8 @@ async function run() {
 
   // --- POST success tests ---
   await test('POST with valid data returns 201 and score list', async () => {
+    // Reset scores to ensure clean state
+    fs.writeFileSync(path.join(tmpDir, 'scores.json'), '[]', 'utf8');
     const res = await request('POST', { name: 'Alice', score: 100 });
     assert.strictEqual(res.status, 201);
     assert.ok(Array.isArray(res.body));
@@ -222,11 +370,16 @@ async function run() {
 
   // --- Oversized POST body ---
   await test('POST with oversized body returns 413 (no connection reset)', async () => {
+    const token = await getChallenge();
     const bigBody = JSON.stringify({ name: 'X', score: 1, padding: 'A'.repeat(2048) });
     const res = await new Promise((resolve, reject) => {
       const req = http.request({
         hostname: '127.0.0.1', port: PORT, path: '/api/scores', method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bigBody) },
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(bigBody),
+          'X-Challenge-Token': token,
+        },
       }, (r) => {
         let chunks = '';
         r.on('data', (c) => (chunks += c));
@@ -278,39 +431,11 @@ async function run() {
     rlProc.stderr.on('data', () => {});
     rlProc.stdout.on('data', () => {});
 
-    // Wait for RL server to start
-    for (let i = 0; i < 20; i++) {
-      try {
-        await new Promise((resolve, reject) => {
-          const req = http.request({ hostname: '127.0.0.1', port: rlPort, path: '/api/scores', method: 'GET' }, (res) => {
-            res.on('data', () => {});
-            res.on('end', () => resolve());
-          });
-          req.on('error', reject);
-          req.end();
-        });
-        break;
-      } catch {
-        await new Promise((r) => setTimeout(r, 200));
-      }
-    }
+    await waitForPort(rlPort);
 
     let rateLimited = false;
     for (let i = 0; i < 6; i++) {
-      const res = await new Promise((resolve, reject) => {
-        const data = JSON.stringify({ name: `Flood${i}`, score: i + 1 });
-        const req = http.request({
-          hostname: '127.0.0.1', port: rlPort, path: '/api/scores', method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
-        }, (r) => {
-          let chunks = '';
-          r.on('data', (c) => (chunks += c));
-          r.on('end', () => resolve({ status: r.statusCode }));
-        });
-        req.on('error', reject);
-        req.write(data);
-        req.end();
-      });
+      const res = await postWithChallenge(rlPort, { name: `Flood${i}`, score: i + 1 });
       if (res.status === 429) {
         rateLimited = true;
         break;
@@ -341,96 +466,25 @@ async function run() {
     akProc.stderr.on('data', () => {});
     akProc.stdout.on('data', () => {});
 
-    // Wait for server to start
-    for (let i = 0; i < 20; i++) {
-      try {
-        await new Promise((resolve, reject) => {
-          const req = http.request({ hostname: '127.0.0.1', port: akPort, path: '/api/scores', method: 'GET' }, (res) => {
-            res.on('data', () => {});
-            res.on('end', () => resolve());
-          });
-          req.on('error', reject);
-          req.end();
-        });
-        break;
-      } catch {
-        await new Promise((r) => setTimeout(r, 200));
-      }
-    }
+    await waitForPort(akPort);
 
-    // POST without API key — should be rejected
-    const noKeyRes = await new Promise((resolve, reject) => {
-      const data = JSON.stringify({ name: 'NoKey', score: 10 });
-      const req = http.request({
-        hostname: '127.0.0.1', port: akPort, path: '/api/scores', method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
-      }, (r) => {
-        let chunks = '';
-        r.on('data', (c) => (chunks += c));
-        r.on('end', () => {
-          let json; try { json = JSON.parse(chunks); } catch { json = chunks; }
-          resolve({ status: r.statusCode, body: json });
-        });
-      });
-      req.on('error', reject);
-      req.write(data);
-      req.end();
-    });
+    // POST without API key — should be rejected (401 before challenge check)
+    const noKeyRes = await postWithChallenge(akPort, { name: 'NoKey', score: 10 });
     assert.strictEqual(noKeyRes.status, 401, 'Expected 401 without API key');
 
     // POST with wrong API key — should be rejected
-    const wrongKeyRes = await new Promise((resolve, reject) => {
-      const data = JSON.stringify({ name: 'WrongKey', score: 10 });
-      const req = http.request({
-        hostname: '127.0.0.1', port: akPort, path: '/api/scores', method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(data),
-          'X-API-Key': 'wrong-key',
-        },
-      }, (r) => {
-        let chunks = '';
-        r.on('data', (c) => (chunks += c));
-        r.on('end', () => {
-          let json; try { json = JSON.parse(chunks); } catch { json = chunks; }
-          resolve({ status: r.statusCode, body: json });
-        });
-      });
-      req.on('error', reject);
-      req.write(data);
-      req.end();
-    });
+    const wrongKeyRes = await postWithChallenge(akPort, { name: 'WrongKey', score: 10 }, { 'X-API-Key': 'wrong-key' });
     assert.strictEqual(wrongKeyRes.status, 401, 'Expected 401 with wrong API key');
 
     // POST with correct API key — should succeed
-    const goodKeyRes = await new Promise((resolve, reject) => {
-      const data = JSON.stringify({ name: 'GoodKey', score: 10 });
-      const req = http.request({
-        hostname: '127.0.0.1', port: akPort, path: '/api/scores', method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(data),
-          'X-API-Key': 'test-secret-key',
-        },
-      }, (r) => {
-        let chunks = '';
-        r.on('data', (c) => (chunks += c));
-        r.on('end', () => {
-          let json; try { json = JSON.parse(chunks); } catch { json = chunks; }
-          resolve({ status: r.statusCode, body: json });
-        });
-      });
-      req.on('error', reject);
-      req.write(data);
-      req.end();
-    });
+    const goodKeyRes = await postWithChallenge(akPort, { name: 'GoodKey', score: 10 }, { 'X-API-Key': 'test-secret-key' });
     assert.strictEqual(goodKeyRes.status, 201, 'Expected 201 with correct API key');
 
     akProc.kill('SIGTERM');
     try { fs.rmSync(akDir, { recursive: true }); } catch {}
   });
 
-  // --- Production mode without API key (anonymous by design) ---
+  // --- Production mode without API key ---
   await test('Server starts and accepts POST in production without SCORE_API_KEY', async () => {
     const prodPort = PORT + 3;
     const prodDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-prod-'));
@@ -442,7 +496,6 @@ async function run() {
     const prodPath = path.join(prodDir, 'server.prod.js');
     fs.writeFileSync(prodPath, prodPatched);
 
-    // Spawn with NODE_ENV=production and NO SCORE_API_KEY
     const prodEnv = { ...process.env };
     delete prodEnv.SCORE_API_KEY;
     prodEnv.NODE_ENV = 'production';
@@ -453,45 +506,11 @@ async function run() {
     prodProc.stderr.on('data', () => {});
     prodProc.stdout.on('data', () => {});
 
-    // Wait for server to start
-    let started = false;
-    for (let i = 0; i < 20; i++) {
-      try {
-        await new Promise((resolve, reject) => {
-          const req = http.request({ hostname: '127.0.0.1', port: prodPort, path: '/api/health', method: 'GET' }, (res) => {
-            res.on('data', () => {});
-            res.on('end', () => resolve());
-          });
-          req.on('error', reject);
-          req.end();
-        });
-        started = true;
-        break;
-      } catch {
-        await new Promise((r) => setTimeout(r, 200));
-      }
-    }
-    assert.ok(started, 'Server should start in production without SCORE_API_KEY');
+    await waitForPort(prodPort);
 
-    // POST should succeed (anonymous submission)
-    const postRes = await new Promise((resolve, reject) => {
-      const data = JSON.stringify({ name: 'ProdUser', score: 55 });
-      const req = http.request({
-        hostname: '127.0.0.1', port: prodPort, path: '/api/scores', method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
-      }, (r) => {
-        let chunks = '';
-        r.on('data', (c) => (chunks += c));
-        r.on('end', () => {
-          let json; try { json = JSON.parse(chunks); } catch { json = chunks; }
-          resolve({ status: r.statusCode, body: json });
-        });
-      });
-      req.on('error', reject);
-      req.write(data);
-      req.end();
-    });
-    assert.strictEqual(postRes.status, 201, 'Expected 201 for anonymous POST in production');
+    // POST should succeed with challenge token
+    const postRes = await postWithChallenge(prodPort, { name: 'ProdUser', score: 55 });
+    assert.strictEqual(postRes.status, 201, 'Expected 201 for POST in production with challenge');
     assert.ok(Array.isArray(postRes.body), 'Expected array response');
     assert.strictEqual(postRes.body[0].name, 'ProdUser');
 
@@ -501,7 +520,6 @@ async function run() {
 
   // --- Duplicate detection ---
   await test('POST with duplicate name+score returns 409', async () => {
-    // Reset scores file with a known entry
     fs.writeFileSync(path.join(tmpDir, 'scores.json'), JSON.stringify([{ name: 'DupTest', score: 42 }]), 'utf8');
     const res = await request('POST', { name: 'DupTest', score: 42 });
     assert.strictEqual(res.status, 409, 'Expected 409 for duplicate name+score');
@@ -515,7 +533,6 @@ async function run() {
   });
 
   // --- Cooldown enforcement ---
-  // Spawn a server with cooldown enabled to verify enforcement.
   await test('Cooldown rejects rapid successive submissions', async () => {
     const cdPort = PORT + 4;
     const cdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-cd-'));
@@ -530,54 +547,14 @@ async function run() {
     cdProc.stderr.on('data', () => {});
     cdProc.stdout.on('data', () => {});
 
-    for (let i = 0; i < 20; i++) {
-      try {
-        await new Promise((resolve, reject) => {
-          const req = http.request({ hostname: '127.0.0.1', port: cdPort, path: '/api/scores', method: 'GET' }, (res) => {
-            res.on('data', () => {});
-            res.on('end', () => resolve());
-          });
-          req.on('error', reject);
-          req.end();
-        });
-        break;
-      } catch {
-        await new Promise((r) => setTimeout(r, 200));
-      }
-    }
+    await waitForPort(cdPort);
 
     // First POST — should succeed
-    const first = await new Promise((resolve, reject) => {
-      const data = JSON.stringify({ name: 'CD1', score: 10 });
-      const req = http.request({
-        hostname: '127.0.0.1', port: cdPort, path: '/api/scores', method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
-      }, (r) => {
-        let chunks = '';
-        r.on('data', (c) => (chunks += c));
-        r.on('end', () => resolve({ status: r.statusCode }));
-      });
-      req.on('error', reject);
-      req.write(data);
-      req.end();
-    });
+    const first = await postWithChallenge(cdPort, { name: 'CD1', score: 10 });
     assert.strictEqual(first.status, 201, 'First POST should succeed');
 
     // Second POST — should be rejected by cooldown
-    const second = await new Promise((resolve, reject) => {
-      const data = JSON.stringify({ name: 'CD2', score: 20 });
-      const req = http.request({
-        hostname: '127.0.0.1', port: cdPort, path: '/api/scores', method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
-      }, (r) => {
-        let chunks = '';
-        r.on('data', (c) => (chunks += c));
-        r.on('end', () => resolve({ status: r.statusCode }));
-      });
-      req.on('error', reject);
-      req.write(data);
-      req.end();
-    });
+    const second = await postWithChallenge(cdPort, { name: 'CD2', score: 20 });
     assert.strictEqual(second.status, 429, 'Second POST should be rejected by cooldown');
 
     cdProc.kill('SIGTERM');
@@ -586,10 +563,8 @@ async function run() {
 
   // --- Concurrent write integrity test ---
   await test('Concurrent POSTs do not lose updates', async () => {
-    // Reset scores file to empty state
     fs.writeFileSync(path.join(tmpDir, 'scores.json'), '[]', 'utf8');
 
-    // Fire 10 concurrent POSTs with unique names
     const count = 10;
     const promises = [];
     for (let i = 0; i < count; i++) {
@@ -597,12 +572,10 @@ async function run() {
     }
     const results = await Promise.all(promises);
 
-    // All should succeed (201)
     for (const r of results) {
       assert.strictEqual(r.status, 201, 'Expected 201 for concurrent POST');
     }
 
-    // Read final state and verify all 10 unique names are present
     const final = await request('GET');
     assert.strictEqual(final.status, 200);
     assert.strictEqual(final.body.length, count,
@@ -615,30 +588,83 @@ async function run() {
 
   // --- Crash recovery: scores persist across server restarts ---
   await test('Scores survive server crash and restart (simulated recovery)', async () => {
-    // Write a known score to disk
     const knownScores = [{ name: 'Persist', score: 999 }];
     fs.writeFileSync(path.join(tmpDir, 'scores.json'), JSON.stringify(knownScores), 'utf8');
 
-    // Kill the running server (simulates a crash)
     serverProcess.kill('SIGKILL');
     await new Promise((r) => serverProcess.on('exit', r));
 
-    // Restart the server (simulates start.sh restart loop)
     serverProcess = spawn(process.execPath, [patchedPath], { stdio: 'pipe' });
     serverProcess.stderr.on('data', () => {});
     serverProcess.stdout.on('data', () => {});
     await waitForServer();
 
-    // Verify scores survived the crash
     const res = await request('GET');
     assert.strictEqual(res.status, 200);
     assert.ok(res.body.length >= 1, 'Expected at least one score after restart');
     assert.strictEqual(res.body[0].name, 'Persist');
     assert.strictEqual(res.body[0].score, 999);
 
-    // Verify new submissions work after restart
     const post = await request('POST', { name: 'AfterCrash', score: 500 });
     assert.strictEqual(post.status, 201, 'Expected 201 for POST after crash recovery');
+  });
+
+  // --- Abuse-focused tests ---
+
+  await test('Replay: reusing a spent challenge token is rejected', async () => {
+    const token = await getChallenge();
+    // Use the token once
+    const first = await requestNoChallenge('POST', { name: 'Replay1', score: 77 }, { 'X-Challenge-Token': token });
+    assert.strictEqual(first.status, 201, 'First use of token should succeed');
+    // Replay with exact same request
+    const replay = await requestNoChallenge('POST', { name: 'Replay1', score: 77 }, { 'X-Challenge-Token': token });
+    assert.strictEqual(replay.status, 403, 'Replayed token should return 403');
+  });
+
+  await test('Spam: rapid challenge farming is bounded', async () => {
+    // Obtain many challenges rapidly — server should cap per-IP
+    const spamPort = PORT + 5;
+    const spamDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-spam-'));
+    const spamPatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${spamPort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${spamDir.replace(/\\/g, '/')}';`)
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;')
+      .replace(/const MAX_CHALLENGES_PER_IP = \d+;/, 'const MAX_CHALLENGES_PER_IP = 3;');
+    const spamPath = path.join(spamDir, 'server.spam.js');
+    fs.writeFileSync(spamPath, spamPatched);
+    const spamProc = spawn(process.execPath, [spamPath], { stdio: 'pipe' });
+    spamProc.stderr.on('data', () => {});
+    spamProc.stdout.on('data', () => {});
+
+    await waitForPort(spamPort);
+
+    let rejected = false;
+    for (let i = 0; i < 6; i++) {
+      const res = await new Promise((resolve, rej) => {
+        const req = http.request({ hostname: '127.0.0.1', port: spamPort, path: '/api/challenge', method: 'GET' }, (r) => {
+          let chunks = '';
+          r.on('data', (c) => (chunks += c));
+          r.on('end', () => resolve({ status: r.statusCode }));
+        });
+        req.on('error', rej);
+        req.end();
+      });
+      if (res.status === 429) {
+        rejected = true;
+        break;
+      }
+    }
+
+    spamProc.kill('SIGTERM');
+    try { fs.rmSync(spamDir, { recursive: true }); } catch {}
+    assert.ok(rejected, 'Expected 429 when farming too many challenge tokens');
+  });
+
+  await test('Health endpoint is accessible', async () => {
+    const res = await requestRaw('GET', '/api/health');
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.status, 'ok');
   });
 
   // Print results

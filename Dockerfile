@@ -29,6 +29,10 @@ VOLUME /data
 # (the game client submits scores anonymously, protected by rate limiting,
 # input validation, and CSP/CORS restrictions).
 EXPOSE 8080
+# Health check verifies both nginx and API backend are up.
+# If the crash sentinel exists, the API has exhausted its restart budget and
+# the container should be flagged as unhealthy so the orchestrator can
+# restart it or trigger alerts.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/api/health || exit 1
+  CMD test ! -f /tmp/api_crash_exhausted && wget -qO- http://127.0.0.1:8080/api/health || exit 1
 CMD ["/app/start.sh"]
