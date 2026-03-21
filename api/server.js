@@ -10,6 +10,40 @@ const MAX_BODY = 1024;
 const MAX_NAME_LENGTH = 15;
 const MAX_SCORE_VALUE = 999999;
 
+// Rate limiting: max POST requests per IP within a sliding window
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX_POSTS = 5; // 5 POSTs per minute per IP
+const rateLimitMap = new Map();
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  let entry = rateLimitMap.get(ip);
+  if (!entry) {
+    entry = [];
+    rateLimitMap.set(ip, entry);
+  }
+  // Remove expired timestamps
+  while (entry.length > 0 && entry[0] <= now - RATE_LIMIT_WINDOW_MS) {
+    entry.shift();
+  }
+  if (entry.length >= RATE_LIMIT_MAX_POSTS) {
+    return true;
+  }
+  entry.push(now);
+  return false;
+}
+
+// Periodically clean up stale rate-limit entries to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, timestamps] of rateLimitMap) {
+    while (timestamps.length > 0 && timestamps[0] <= now - RATE_LIMIT_WINDOW_MS) {
+      timestamps.shift();
+    }
+    if (timestamps.length === 0) rateLimitMap.delete(ip);
+  }
+}, RATE_LIMIT_WINDOW_MS).unref();
+
 function readScores() {
   try {
     const raw = fs.readFileSync(SCORES_FILE, 'utf8');
@@ -57,6 +91,12 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'POST') {
+    const clientIp = req.socket.remoteAddress || 'unknown';
+    if (isRateLimited(clientIp)) {
+      sendError(res, 429, 'Too many requests. Try again later.');
+      return;
+    }
+
     let body = '';
     let tooLarge = false;
 
