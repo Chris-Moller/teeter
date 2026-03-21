@@ -47,14 +47,16 @@ VOLUME /data
 ENV NODE_ENV=production
 ENV ALLOW_ANONYMOUS_SCORES=false
 EXPOSE 8080
-# --- Deployment auth paths ---
+# --- Deployment auth paths (graceful degradation policy) ---
 #
 # Default (no env overrides): the leaderboard API is DISABLED.
-#   start.sh detects the missing auth config and skips API startup entirely
-#   (no crash-loop). nginx serves the static game with localStorage-only
-#   leaderboard. The health check reports unhealthy (crash sentinel present)
-#   so orchestrators can detect the degraded state. To enable the shared
-#   leaderboard, set SCORE_API_KEY or ALLOW_ANONYMOUS_SCORES=true.
+#   This is an intentional, approved degradation path — not a silent failure.
+#   start.sh detects the missing auth config, logs a NOTICE, writes a crash
+#   sentinel, and skips API startup (no crash-loop). nginx serves the static
+#   game with localStorage-only leaderboard. The HEALTHCHECK reports unhealthy
+#   so orchestrators (Docker Swarm, Kubernetes, etc.) can detect the degraded
+#   state and alert operators. To enable the shared leaderboard, set
+#   SCORE_API_KEY or ALLOW_ANONYMOUS_SCORES=true.
 #
 # Anonymous browser mode (casual game deployment):
 #   docker run -e ALLOW_ANONYMOUS_SCORES=true -v scores:/data -p 8080:8080 ball-game

@@ -890,6 +890,92 @@ async function run() {
     try { fs.rmSync(dockerDir, { recursive: true }); } catch {}
   });
 
+  // --- Release gate: end-to-end shared leaderboard availability ---
+  // Validates that the recommended deployment config (ALLOW_ANONYMOUS_SCORES=true)
+  // provides a fully working shared leaderboard: challenge → POST → GET → verify
+  // persistence. This is the deployment path for browser-based game servers.
+  // Addresses security review finding: "Add a release gate test that validates
+  // end-to-end shared leaderboard availability in default deployment config."
+  await test('Release gate: e2e shared leaderboard works with ALLOW_ANONYMOUS_SCORES=true in production', async () => {
+    const gatePort = PORT + 9;
+    const gateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-gate-'));
+    const gatePatched = serverSrc
+      .replace(/const PORT = \d+;/, `const PORT = ${gatePort};`)
+      .replace(/const DATA_DIR = '[^']+';/, `const DATA_DIR = '${gateDir.replace(/\\/g, '/')}';`)
+      .replace(/const RATE_LIMIT_MAX_POSTS = \d+;/, 'const RATE_LIMIT_MAX_POSTS = 100;')
+      .replace(/const SCORE_COOLDOWN_MS = [\d* ]+;/, 'const SCORE_COOLDOWN_MS = 0;');
+    const gatePath = path.join(gateDir, 'server.gate.js');
+    fs.writeFileSync(gatePath, gatePatched);
+
+    const gateEnv = { ...process.env };
+    delete gateEnv.SCORE_API_KEY;
+    gateEnv.NODE_ENV = 'production';
+    gateEnv.ALLOW_ANONYMOUS_SCORES = 'true';
+    const gateProc = spawn(process.execPath, [gatePath], { stdio: 'pipe', env: gateEnv });
+    gateProc.stderr.on('data', () => {});
+    gateProc.stdout.on('data', () => {});
+
+    await waitForPort(gatePort);
+
+    // 1. Health endpoint responds
+    const healthRes = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: gatePort, path: '/api/health', method: 'GET' }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve({ status: r.statusCode, body: JSON.parse(chunks) }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.strictEqual(healthRes.status, 200, 'Health endpoint should return 200');
+    assert.strictEqual(healthRes.body.status, 'ok', 'Health status should be ok');
+
+    // 2. GET /api/scores returns empty array initially
+    const emptyRes = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: gatePort, path: '/api/scores', method: 'GET' }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve({ status: r.statusCode, body: JSON.parse(chunks) }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.strictEqual(emptyRes.status, 200, 'GET scores should return 200');
+    assert.deepStrictEqual(emptyRes.body, [], 'Scores should start empty');
+
+    // 3. Full submission flow: challenge → POST → verify
+    const submitRes = await postWithChallenge(gatePort, { name: 'GateTest', score: 123 });
+    assert.strictEqual(submitRes.status, 201, 'Score submission should succeed (201)');
+    assert.ok(Array.isArray(submitRes.body), 'Response should be array');
+    assert.strictEqual(submitRes.body.length, 1, 'Should have exactly 1 score');
+    assert.strictEqual(submitRes.body[0].name, 'GateTest');
+    assert.strictEqual(submitRes.body[0].score, 123);
+
+    // 4. Verify persistence via GET
+    const verifyRes = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: gatePort, path: '/api/scores', method: 'GET' }, (r) => {
+        let chunks = '';
+        r.on('data', (c) => (chunks += c));
+        r.on('end', () => resolve({ status: r.statusCode, body: JSON.parse(chunks) }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.strictEqual(verifyRes.status, 200);
+    assert.strictEqual(verifyRes.body.length, 1, 'Persisted score should be retrievable');
+    assert.strictEqual(verifyRes.body[0].name, 'GateTest');
+    assert.strictEqual(verifyRes.body[0].score, 123);
+
+    // 5. Verify file-level persistence (scores survive reads)
+    const rawScores = fs.readFileSync(path.join(gateDir, 'scores.json'), 'utf8');
+    const parsed = JSON.parse(rawScores);
+    assert.strictEqual(parsed.length, 1, 'scores.json should have 1 entry');
+    assert.strictEqual(parsed[0].name, 'GateTest');
+
+    gateProc.kill('SIGTERM');
+    try { fs.rmSync(gateDir, { recursive: true }); } catch {}
+  });
+
   await test('POST with server-rejected challenge does not modify scores', async () => {
     // Use main server — POST without a valid challenge token should return 403
     // and should NOT modify the score file
