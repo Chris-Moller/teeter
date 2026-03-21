@@ -1,5 +1,6 @@
 #!/bin/sh
 mkdir -p /data
+chmod 700 /data
 
 MAX_RETRIES=5
 RETRY_WINDOW=60
