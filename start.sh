@@ -46,7 +46,14 @@ rm -f "$CRASH_SENTINEL"
     if [ "$failures" -ge "$MAX_RETRIES" ]; then
       echo "ERROR: Node API crashed $MAX_RETRIES times within ${RETRY_WINDOW}s — giving up. Leaderboard API is unavailable." >&2
       echo "ERROR: Container HEALTHCHECK will now fail. Orchestrator should restart/alert." >&2
+      echo "ERROR: Game falls back to localStorage-only leaderboard until container restart." >&2
       # Write sentinel so external health checks can detect API crash-loop exhaustion.
+      # The Dockerfile HEALTHCHECK tests for this file: the container becomes "unhealthy"
+      # after --retries consecutive failures, allowing Docker/Kubernetes to restart it
+      # automatically (restart policy) or surface alerts via monitoring.
+      # Operators: configure container restart policies (e.g. docker --restart=on-failure,
+      # or Kubernetes livenessProbe) to auto-recover, and set up alerting on container
+      # restart events to detect persistent crash loops.
       echo "API_CRASHED=$(date -Iseconds) failures=$MAX_RETRIES window=${RETRY_WINDOW}s exit_code=$exit_code" > "$CRASH_SENTINEL"
       break
     fi
