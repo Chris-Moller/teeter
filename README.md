@@ -59,3 +59,22 @@ on the following patterns:
 The API also emits a periodic `ABUSE_SUMMARY` line every 60 seconds when
 any abuse counter is non-zero, with `WARN` level when thresholds are
 exceeded.
+
+### Health & Crash Sentinel
+
+The container exposes `GET /api/health` through nginx. The Docker
+`HEALTHCHECK` instruction uses this endpoint combined with a crash
+sentinel file to detect both transient failures and crash-loop exhaustion:
+
+| Signal | How to check | Indicates |
+|---|---|---|
+| `/api/health` returns non-200 | `wget -qO- http://host:8080/api/health` | API is down or unreachable |
+| `/tmp/api_crash_exhausted` exists | Container logs: `ERROR: Node API crashed` | Crash loop budget exhausted; API in recovery cooldown |
+| HEALTHCHECK status `unhealthy` | `docker inspect --format='{{.State.Health.Status}}'` | Sustained API failure (3 consecutive failed checks) |
+
+When `STRICT_STARTUP=false` (default), the container starts nginx even if
+the API is slow to initialize. The game's localStorage fallback keeps the
+static app playable, but the shared leaderboard is unavailable until the
+API recovers. Set `STRICT_STARTUP=true` in environments where a
+non-functional leaderboard should prevent the container from starting
+(e.g. integration tests, staging with health-gate deployments).
