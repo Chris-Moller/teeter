@@ -16,7 +16,7 @@ import {
 } from './renderer.js';
 
 import { initTracker, calibrate, detectTilt, detectPitch, resetTilt } from './tracker.js';
-import { initPhysics, updatePhysics, resetBall, refreshLevel } from './physics.js';
+import { initPhysics, updatePhysics } from './physics.js';
 
 const overlay = document.getElementById('overlay');
 const subtitle = overlay.querySelector('.subtitle');
