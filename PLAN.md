@@ -1,83 +1,44 @@
-# Plan: Fix Static Map After Track Wrap
+# Plan: Curved Downhill Track with Finish Line
 
-## Problem
+## Summary
 
-When the ball reaches the end of the track, `physics.js` wraps the ball position back to the start (`ball.z = -halfLength + 1`), but the level (obstacles, coins, turtle) is **never regenerated**. This causes:
+Replace the straight flat track with a winding, downhill CatmullRom curve. Add a finish
+line at the end of the course, a run timer, and curve-following camera/physics.
 
-1. **Same obstacles every lap** — obstacles stay in identical positions because `regenerateLevel()` is not called on wrap.
-2. **No coins visible** — coins collected on the first pass remain hidden (their meshes have `visible = false` and the `coinsCollected` array still marks them as collected).
-3. **Turtle missing** — once collected or passed, the turtle doesn't reappear.
+## Changes
 
-## Root Cause
+### js/renderer.js
+- Define `CONTROL_POINTS` for a gently curving, downhill path.
+- Build a ribbon-mesh track surface along a `CatmullRomCurve3`.
+- Place obstacles, coins, and turtle in curve-local (t, d) space and convert to world coordinates.
+- Add a checkerboard finish line and banner at t=1.0.
+- Export `curveLocalToWorld`, `getLateral`, `getTrackUp`, and `curve`/`curveLength` via `getTrackConfig()`.
+- Camera follows ball along curve tangent (`updateCamera(ballT, ballWorldPos)`).
 
-`js/physics.js:142-144` — the track wrap logic only resets `ball.z` but does nothing to refresh the level layout or reset collection state. There is no communication back to `main.js` that a wrap occurred.
+### js/physics.js
+- Replace XZ ball state with curve-local `t` (progress 0-1) and `d` (lateral offset).
+- Compute gravity boost from curve tangent slope (`tangent.y`).
+- Collision, coin, and turtle checks use t/d distance instead of world XZ.
+- Add `finished` flag when `ball.t >= 1.0`; remove wrap logic.
 
-## Solution
+### js/main.js
+- Add run timer display and `formatTime()` helper.
+- Handle `result.finished` to show "COURSE COMPLETE!" with time.
+- Pass `result.t` and ball world position to `updateCamera`.
+- Import `calibrate` from tracker and call on start/restart.
 
-### Approach: Signal wrap event, regenerate in main.js
+### js/tracker.js
+- Add `calibrate()` export to capture neutral head position.
+- Use face-center X offset instead of eye-angle for tilt detection.
 
-The cleanest fix follows the existing pattern (similar to how `coinsCollected` and `turtleCollected` are communicated):
-
-1. **physics.js**: Add a `wrapped: true` flag to the return object of `updateOnTrack()` when the ball wraps around.
-
-2. **physics.js**: Add a new exported function `refreshLevel(config)` that updates obstacles, coins, and turtle references (and resets their collection state) without resetting ball position or velocity.
-
-3. **main.js**: When `result.wrapped` is true, call `regenerateLevel()` to create new obstacle/coin/turtle meshes, then call `refreshLevel()` with the new layout data.
-
-### Detailed Changes
-
-#### js/physics.js
-
-1. Add `wrapped` boolean tracking in `updateOnTrack()`:
-   - Set `wrapped = true` when `ball.z > halfLength` triggers the wrap.
-   - Include `wrapped` in the return object (default `false`).
-   - Also return `wrapped: false` from `updateFalling()`.
-
-2. Add new export `refreshLevel(config)`:
-   ```js
-   export function refreshLevel(config) {
-     obstacles = config.obstacles || [];
-     coins = config.coins || [];
-     coinsCollected = new Array(coins.length).fill(false);
-     turtle = config.turtle || null;
-     turtleCollected = false;
-   }
-   ```
-   This updates level data without touching ball state or slowdown timers.
-
-#### js/main.js
-
-1. Import `refreshLevel` from `physics.js`.
-2. In the game loop, after `updatePhysics()`, check `result.wrapped`:
-   ```js
-   if (result.wrapped) {
-     regenerateLevel();
-     const newConfig = getTrackConfig();
-     newConfig.obstacles = getObstacles();
-     newConfig.coins = getCoins();
-     newConfig.turtle = getTurtle();
-     refreshLevel(newConfig);
-   }
-   ```
-
-### Why not other approaches?
-
-- **Regenerate inside physics.js**: Physics shouldn't know about rendering. The existing architecture separates concerns.
-- **Just reset coinsCollected on wrap**: Would show the same layout forever (same obstacle positions). The description says "the map becomes the same" which implies it should differ.
-- **Use `initPhysics` on wrap**: Would reset ball position to start, causing a visual teleport and losing slowdown state.
-
-## File Changes Summary
-
-| File | Change |
-|------|--------|
-| `js/physics.js` | Add `wrapped` flag to return objects; add `refreshLevel()` export |
-| `js/main.js` | Import `refreshLevel`; handle `result.wrapped` by regenerating level |
+### index.html
+- Add `#timer` element and `.go-time` element in game-over box.
+- Add inline script to format version date via `data-updated` attribute.
 
 ## Verification
 
-- `docker build -t teeter .` must succeed
-- After the ball reaches the end of the track and wraps, obstacles should appear in different positions
-- Coins should be visible after wrapping (fresh coins in new positions)
-- Turtle powerup should reappear after wrapping
-- Score should persist across wraps (not reset to 0)
-- Existing game-over/restart flow should still work
+- `docker build -t teeter .` must succeed.
+- Ball rolls along a curved, downhill path.
+- Finish line is visible at the end of the course.
+- Timer counts up during gameplay and is shown on completion.
+- Camera follows ball smoothly along the curve.
