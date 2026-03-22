@@ -71,12 +71,14 @@ for i in $(seq 1 $SMOKE_RETRIES); do
   sleep 1
 done
 
-# STRICT_STARTUP (default: true): when enabled, the container exits with an
+# STRICT_STARTUP (default: false): when enabled, the container exits with an
 # error if the API smoke test fails, ensuring the container never appears
-# healthy while /api/scores is non-functional. Set to "false" to allow
-# nginx to start even if the API is unhealthy (graceful degradation to
-# localStorage-only mode).
-STRICT_STARTUP="${STRICT_STARTUP:-true}"
+# healthy while /api/scores is non-functional. Default is false so the
+# static game (localStorage fallback) remains playable even if the API has
+# transient startup issues — graceful degradation over hard failure.
+# Set to "true" in environments where a non-functional leaderboard API
+# should prevent the container from starting (e.g. integration tests).
+STRICT_STARTUP="${STRICT_STARTUP:-false}"
 
 if [ "$SMOKE_OK" = "false" ]; then
   if [ "$STRICT_STARTUP" = "true" ]; then
