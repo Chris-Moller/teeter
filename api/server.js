@@ -273,12 +273,16 @@ function withWriteLock(fn) {
   return _writeLock;
 }
 
-// CORS denial headers: explicitly block cross-origin requests as defense-in-depth.
-// Browsers already block cross-origin fetch when no Access-Control-Allow-Origin is
-// present, but sending a restrictive Vary header and omitting ACAO makes the intent
-// explicit. This supplements nginx CSP connect-src: 'self'.
+// Defense-in-depth security headers (Helmet-style).
+// These mirror the nginx security headers so the API is protected even if
+// requests bypass the nginx proxy (e.g. direct access during development,
+// or misconfigured reverse proxy). nginx may override or duplicate these
+// headers — that is harmless and intentional (belt-and-suspenders).
 const COMMON_HEADERS = {
   'Vary': 'Origin',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'SAMEORIGIN',
+  'Cache-Control': 'no-store',
 };
 
 function sendJSON(res, statusCode, data) {
