@@ -10,6 +10,9 @@ outside `localhost`, you **must** place an HTTPS-terminating reverse proxy
 Without TLS, score submissions and challenge tokens are exposed to network
 interception.
 
+When deploying behind a TLS proxy, enable HSTS by uncommenting the
+`Strict-Transport-Security` header in `nginx.conf`.
+
 ### Anonymous Writes
 
 The image ships with `ALLOW_ANONYMOUS_SCORES=true` (shared leaderboard for
