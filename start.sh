@@ -16,8 +16,8 @@ CRASH_SENTINEL="/tmp/api_crash_exhausted"
 rm -f "$CRASH_SENTINEL"
 
 # Start Node API in the background with bounded restarts and auto-recovery.
-# The API always starts — server.js enforces its own auth policy (exits with
-# FATAL if production auth is misconfigured). No silent skip path exists.
+# server.js always starts (no hard-fail). When ALLOW_ANONYMOUS_SCORES=false
+# and no SCORE_API_KEY, it runs in read-only mode (GET works, POST returns 403).
 (
   failures=0
   window_start=$(date +%s)
@@ -53,6 +53,27 @@ rm -f "$CRASH_SENTINEL"
     sleep 2
   done
 ) &
+
+# Startup smoke test: wait for the API to be ready, then verify /api/scores
+# is functional. This catches configuration errors early (e.g. missing deps,
+# permission issues on /data) before nginx starts accepting traffic.
+SMOKE_RETRIES=10
+SMOKE_OK=false
+for i in $(seq 1 $SMOKE_RETRIES); do
+  if wget -qO- http://127.0.0.1:3001/api/health >/dev/null 2>&1; then
+    # Health endpoint is up — now verify scores endpoint returns valid JSON
+    if wget -qO- http://127.0.0.1:3001/api/scores 2>/dev/null | head -c 1 | grep -q '\['; then
+      echo "INFO: Startup smoke test passed — /api/scores is functional." >&2
+      SMOKE_OK=true
+      break
+    fi
+  fi
+  sleep 1
+done
+
+if [ "$SMOKE_OK" = "false" ]; then
+  echo "WARN: Startup smoke test did not pass within ${SMOKE_RETRIES}s. API may still be starting." >&2
+fi
 
 # Run nginx in the foreground as PID 1's child.
 nginx -g 'daemon off;'

@@ -44,15 +44,15 @@ VOLUME /data
 # exposes score submissions and challenge tokens to network interception.
 # The nginx config inside this image does NOT terminate TLS.
 #
-# --- Default: secure-by-default (anonymous writes DISABLED) ---
-# ALLOW_ANONYMOUS_SCORES defaults to false. The server refuses to start in
-# production without either SCORE_API_KEY or explicit ALLOW_ANONYMOUS_SCORES=true.
+# --- Default: shared leaderboard enabled (anonymous writes ALLOWED) ---
+# ALLOW_ANONYMOUS_SCORES defaults to true so the shared global leaderboard
+# works out of the box for the casual browser game (no user accounts).
 #
-# For the shared global leaderboard (casual browser game, no user accounts):
-#   docker run -e ALLOW_ANONYMOUS_SCORES=true -p 8080:8080 <image>
+# To disable anonymous writes and require an API key:
+#   docker run -e ALLOW_ANONYMOUS_SCORES=false -e SCORE_API_KEY=<secret> -p 8080:8080 <image>
 #
-# For authenticated server-to-server mode:
-#   docker run -e SCORE_API_KEY=<secret> -p 8080:8080 <image>
+# To explicitly disable all writes (read-only leaderboard):
+#   docker run -e ALLOW_ANONYMOUS_SCORES=false -p 8080:8080 <image>
 #
 # When ALLOW_ANONYMOUS_SCORES=true, abuse resistance (defense-in-depth):
 #   - Challenge tokens (one-time, IP-bound, 5-min TTL, max 5 pending/IP)
@@ -67,7 +67,7 @@ VOLUME /data
 # multiple IPs could insert fake scores. This is appropriate for non-critical
 # game score data.
 ENV NODE_ENV=production
-ENV ALLOW_ANONYMOUS_SCORES=false
+ENV ALLOW_ANONYMOUS_SCORES=true
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD test ! -f /tmp/api_crash_exhausted && wget -qO- http://127.0.0.1:8080/api/health || exit 1

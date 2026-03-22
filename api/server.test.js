@@ -485,7 +485,9 @@ async function run() {
   });
 
   // --- Production mode guardrails ---
-  await test('Server exits in production without SCORE_API_KEY (secure-by-default)', async () => {
+  // When ALLOW_ANONYMOUS_SCORES is not set, it defaults to true (shared leaderboard).
+  // Server should start successfully in production and accept anonymous scores.
+  await test('Server starts in production with default config (anonymous scores enabled)', async () => {
     const prodPort = PORT + 3;
     const prodDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-prod-'));
     const prodPatched = serverSrc
@@ -505,18 +507,17 @@ async function run() {
       env: prodEnv,
     });
 
-    let stderrOutput = '';
-    prodProc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
+    prodProc.stderr.on('data', () => {});
     prodProc.stdout.on('data', () => {});
 
-    // Server should exit with non-zero code (refuses to start without API key)
-    const exitCode = await new Promise((resolve) => {
-      prodProc.on('exit', (code) => resolve(code));
-    });
-    assert.strictEqual(exitCode, 1, 'Expected exit code 1 when production lacks SCORE_API_KEY');
-    assert.ok(stderrOutput.includes('FATAL'), 'Expected FATAL error message');
-    assert.ok(stderrOutput.includes('SCORE_API_KEY'), 'Expected message mentioning SCORE_API_KEY');
+    // Wait for server to be ready
+    await waitForPort(prodPort);
 
+    // Verify it accepts anonymous score submissions (default behavior)
+    const postRes = await postWithChallenge(prodPort, { name: 'DefaultTest', score: 42 });
+    assert.strictEqual(postRes.status, 201, 'Expected 201 for anonymous POST with default config');
+
+    prodProc.kill('SIGTERM');
     try { fs.rmSync(prodDir, { recursive: true }); } catch {}
   });
 
@@ -540,13 +541,13 @@ async function run() {
       env: prodEnv,
     });
 
-    let stderrOutput = '';
-    prodProc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
-    prodProc.stdout.on('data', () => {});
+    let allOutput = '';
+    prodProc.stderr.on('data', (d) => { allOutput += d.toString(); });
+    prodProc.stdout.on('data', (d) => { allOutput += d.toString(); });
 
     // Server should start with explicit anonymous override
     await waitForPort(prodPort);
-    assert.ok(stderrOutput.includes('ALLOW_ANONYMOUS_SCORES'), 'Expected warning mentioning ALLOW_ANONYMOUS_SCORES');
+    assert.ok(allOutput.includes('leaderboard') || allOutput.includes('anonymous'), 'Expected info about anonymous/leaderboard mode');
 
     // Verify it accepts anonymous submissions
     const postRes = await postWithChallenge(prodPort, { name: 'ProdAnon', score: 77 });
@@ -854,9 +855,9 @@ async function run() {
   });
 
   // --- Locked-down path: ALLOW_ANONYMOUS_SCORES=false, no SCORE_API_KEY ---
-  // Verifies the API exits cleanly with an actionable error message when
-  // operators explicitly disable anonymous scores but forget to set SCORE_API_KEY.
-  await test('ALLOW_ANONYMOUS_SCORES=false without API key: exits with actionable error', async () => {
+  // Verifies the server starts in read-only mode: GET /api/scores works,
+  // POST /api/scores returns 403 with an informative message.
+  await test('ALLOW_ANONYMOUS_SCORES=false without API key: read-only mode', async () => {
     const dockerPort = PORT + 8;
     const dockerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-docker-default-'));
     const dockerPatched = serverSrc
@@ -878,14 +879,37 @@ async function run() {
     dockerProc.stderr.on('data', (d) => { stderrOutput += d.toString(); });
     dockerProc.stdout.on('data', () => {});
 
-    const exitCode = await new Promise((resolve) => {
-      dockerProc.on('exit', (code) => resolve(code));
-    });
-    assert.strictEqual(exitCode, 1, 'Expected exit code 1 for default Docker config');
-    assert.ok(stderrOutput.includes('FATAL'), 'Expected FATAL error in stderr');
-    assert.ok(stderrOutput.includes('SCORE_API_KEY'), 'Error should mention SCORE_API_KEY');
-    assert.ok(stderrOutput.includes('ALLOW_ANONYMOUS_SCORES'), 'Error should mention ALLOW_ANONYMOUS_SCORES as alternative');
+    // Server should start (not exit) in read-only mode
+    await waitForPort(dockerPort);
+    assert.ok(stderrOutput.includes('read-only'), 'Expected read-only mode warning in stderr');
 
+    // GET should work
+    const getRes = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: dockerPort, path: '/api/scores', method: 'GET' }, (res) => {
+        let chunks = '';
+        res.on('data', (c) => (chunks += c));
+        res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(chunks) }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.strictEqual(getRes.status, 200, 'Expected 200 for GET in read-only mode');
+    assert.ok(Array.isArray(getRes.body), 'Expected array response for GET');
+
+    // POST should be rejected with 403
+    const postRes = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: '127.0.0.1', port: dockerPort, path: '/api/scores', method: 'POST', headers: { 'Content-Type': 'application/json' } }, (res) => {
+        let chunks = '';
+        res.on('data', (c) => (chunks += c));
+        res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(chunks) }));
+      });
+      req.on('error', reject);
+      req.end(JSON.stringify({ name: 'Test', score: 100 }));
+    });
+    assert.strictEqual(postRes.status, 403, 'Expected 403 for POST in read-only mode');
+    assert.ok(postRes.body.error.includes('read-only'), 'Expected read-only error message');
+
+    dockerProc.kill('SIGTERM');
     try { fs.rmSync(dockerDir, { recursive: true }); } catch {}
   });
 
