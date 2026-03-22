@@ -41,12 +41,18 @@ VOLUME /data
 # exposes score submissions and challenge tokens to network interception.
 # The nginx config inside this image does NOT terminate TLS.
 #
-# --- Anonymous write endpoint: explicit risk acceptance ---
-# ALLOW_ANONYMOUS_SCORES=true is the default because the product requirement
-# is a casual browser game leaderboard with no user accounts. This is an
-# intentional, reviewed design decision — not an accidental misconfiguration.
+# --- Secure-by-default: anonymous writes disabled ---
+# ALLOW_ANONYMOUS_SCORES defaults to false. The server refuses to start in
+# production without either SCORE_API_KEY or explicit ALLOW_ANONYMOUS_SCORES=true.
+# This prevents accidental deployment of an unauthenticated write endpoint.
 #
-# Abuse resistance (defense-in-depth):
+# To enable the shared leaderboard (casual browser game, no user accounts):
+#   docker run -e ALLOW_ANONYMOUS_SCORES=true -p 8080:8080 <image>
+#
+# To require authenticated submissions (server-to-server):
+#   docker run -e SCORE_API_KEY=<secret> -p 8080:8080 <image>
+#
+# When ALLOW_ANONYMOUS_SCORES=true, abuse resistance (defense-in-depth):
 #   - Challenge tokens (one-time, IP-bound, 5-min TTL, max 5 pending/IP)
 #   - Rate limiting (3 POST/min/IP)
 #   - Per-IP cooldown (10s between submissions)
@@ -55,16 +61,11 @@ VOLUME /data
 #   - CSP connect-src 'self' (blocks cross-origin script access)
 #   - Server binds 127.0.0.1 only (nginx proxy required)
 #
-# Accepted risk: a determined attacker with multiple IPs could insert fake
-# scores. This is appropriate for non-critical game score data.
-#
-# To require authenticated submissions (server-to-server):
-#   docker run -e SCORE_API_KEY=<secret> -e ALLOW_ANONYMOUS_SCORES=false ...
-# To disable the leaderboard API entirely:
-#   docker run -e ALLOW_ANONYMOUS_SCORES=false ...
-#   (server will refuse to start without SCORE_API_KEY or explicit opt-in)
+# Accepted risk (when anonymous mode enabled): a determined attacker with
+# multiple IPs could insert fake scores. This is appropriate for non-critical
+# game score data.
 ENV NODE_ENV=production
-ENV ALLOW_ANONYMOUS_SCORES=true
+ENV ALLOW_ANONYMOUS_SCORES=false
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD test ! -f /tmp/api_crash_exhausted && wget -qO- http://127.0.0.1:8080/api/health || exit 1

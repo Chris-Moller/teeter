@@ -853,12 +853,12 @@ async function run() {
     try { fs.rmSync(defDir, { recursive: true }); } catch {}
   });
 
-  // --- Explicit-disable path ---
+  // --- Default Docker path (secure-by-default) ---
   // Simulates: NODE_ENV=production, ALLOW_ANONYMOUS_SCORES=false, no SCORE_API_KEY.
-  // This is the explicit opt-out path (not the Docker default, which is
-  // ALLOW_ANONYMOUS_SCORES=true). Verifies the API exits cleanly with an
-  // actionable error message so operators know the leaderboard is disabled.
-  await test('Explicit disable: exits with actionable error when ALLOW_ANONYMOUS_SCORES=false and no API key', async () => {
+  // This is the Docker default. Verifies the API exits cleanly with an
+  // actionable error message directing operators to set SCORE_API_KEY or
+  // explicitly opt in to anonymous submissions.
+  await test('Default Docker config: exits with actionable error when ALLOW_ANONYMOUS_SCORES=false and no API key', async () => {
     const dockerPort = PORT + 8;
     const dockerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-docker-default-'));
     const dockerPatched = serverSrc
@@ -891,12 +891,11 @@ async function run() {
     try { fs.rmSync(dockerDir, { recursive: true }); } catch {}
   });
 
-  // --- Release gate: default Docker deployment path ---
-  // Validates the Docker default deployment (NODE_ENV=production,
-  // ALLOW_ANONYMOUS_SCORES=true, no SCORE_API_KEY) provides a fully working
-  // shared leaderboard: challenge → POST → GET → verify persistence.
-  // This is the intended default for the casual browser game.
-  await test('Release gate: e2e shared leaderboard works in default Docker deployment', async () => {
+  // --- Release gate: explicit anonymous opt-in deployment path ---
+  // Validates that operators who explicitly set ALLOW_ANONYMOUS_SCORES=true
+  // (NODE_ENV=production, no SCORE_API_KEY) get a fully working shared
+  // leaderboard: challenge → POST → GET → verify persistence.
+  await test('Release gate: e2e shared leaderboard works with ALLOW_ANONYMOUS_SCORES=true', async () => {
     const gatePort = PORT + 9;
     const gateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scores-gate-'));
     const gatePatched = serverSrc
