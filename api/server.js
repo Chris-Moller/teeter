@@ -198,6 +198,15 @@ function isRateLimited(ip) {
   return false;
 }
 
+// --- Abuse monitoring counters (reset each reporting interval) ---
+// These counters enable operators to detect abuse patterns via log aggregation.
+// Thresholds (per RATE_LIMIT_WINDOW_MS interval):
+//   - rateLimitHits > 50  → possible automated abuse
+//   - challengeRejects > 10 → bot probing for tokens
+//   - oversizeRejects > 10 → payload-stuffing attack
+const abuseCounters = { rateLimitHits: 0, challengeRejects: 0, oversizeRejects: 0 };
+const ABUSE_REPORT_INTERVAL_MS = 60 * 1000; // 1 minute
+
 // Periodically clean up stale rate-limit, cooldown, and challenge entries
 setInterval(() => {
   const now = Date.now();
@@ -214,6 +223,21 @@ setInterval(() => {
     if (now > entry.expires) challengeMap.delete(token);
   }
 }, RATE_LIMIT_WINDOW_MS).unref();
+
+// Periodic abuse summary — emits a structured log line every minute so
+// operators can set alerts on threshold breaches without parsing every request.
+setInterval(() => {
+  const { rateLimitHits, challengeRejects, oversizeRejects } = abuseCounters;
+  if (rateLimitHits > 0 || challengeRejects > 0 || oversizeRejects > 0) {
+    const level = (rateLimitHits > 50 || challengeRejects > 10 || oversizeRejects > 10) ? 'WARN' : 'INFO';
+    console.error(
+      `${level}: ABUSE_SUMMARY rateLimitHits=${rateLimitHits} challengeRejects=${challengeRejects} oversizeRejects=${oversizeRejects}`
+    );
+  }
+  abuseCounters.rateLimitHits = 0;
+  abuseCounters.challengeRejects = 0;
+  abuseCounters.oversizeRejects = 0;
+}, ABUSE_REPORT_INTERVAL_MS).unref();
 
 function readScores() {
   try {
@@ -294,6 +318,7 @@ const server = http.createServer((req, res) => {
     const clientIp = (isLoopback && req.headers['x-real-ip']) ? req.headers['x-real-ip'] : peerIp || 'unknown';
     const token = issueChallenge(clientIp);
     if (!token) {
+      abuseCounters.challengeRejects++;
       console.error(`MONITOR: 429 challenge-farming ip=${clientIp}`);
       sendError(res, 429, 'Too many pending challenges');
       return;
@@ -329,6 +354,7 @@ const server = http.createServer((req, res) => {
     const isLoopback = peerIp === '127.0.0.1' || peerIp === '::1' || peerIp === '::ffff:127.0.0.1';
     const clientIp = (isLoopback && req.headers['x-real-ip']) ? req.headers['x-real-ip'] : peerIp || 'unknown';
     if (isRateLimited(clientIp)) {
+      abuseCounters.rateLimitHits++;
       console.error(`MONITOR: 429 rate-limited ip=${clientIp}`);
       sendError(res, 429, 'Too many requests. Try again later.');
       return;
@@ -375,6 +401,7 @@ const server = http.createServer((req, res) => {
         // Send 413 exactly once and consume remaining data to avoid connection reset.
         // resume() drains any buffered chunks so the client sees a clean HTTP response
         // instead of a TCP RST.
+        abuseCounters.oversizeRejects++;
         console.error(`MONITOR: 413 payload-too-large ip=${clientIp}`);
         sendError(res, 413, 'Payload too large');
         req.resume();
