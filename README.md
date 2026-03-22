@@ -24,6 +24,23 @@ To require authenticated submissions:
 docker run -e ALLOW_ANONYMOUS_SCORES=false -e SCORE_API_KEY=<secret> -p 8080:8080 <image>
 ```
 
+When `SCORE_API_KEY` is set, the browser client cannot submit scores directly
+(it has no way to securely hold the key). Route browser submissions through a
+backend proxy that authenticates users and injects the key:
+
+```
+Browser → Your auth proxy (validates user session, adds X-API-Key) → Container :8080
+```
+
+To disable all writes (read-only leaderboard):
+
+```sh
+docker run -e ALLOW_ANONYMOUS_SCORES=false -p 8080:8080 <image>
+```
+
+In read-only mode the server starts normally — `GET /api/scores` works but
+`POST /api/scores` returns 403.
+
 ### Operational Monitoring
 
 The Node.js API emits structured log lines to stderr for abuse detection.
