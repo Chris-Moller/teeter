@@ -51,20 +51,19 @@ const MAX_SCORE_VALUE = 999999;
 //   - Route browser submissions through a backend proxy that authenticates
 //     users and injects the key into forwarded requests.
 //   - For server-to-server integrations, pass the key directly in X-API-Key.
-// Default auth mode (Docker image ships with ALLOW_ANONYMOUS_SCORES=false):
-//   The image is secure-by-default — it refuses to start in production
-//   without explicit configuration. Operators must choose one of:
-//     1. Set SCORE_API_KEY for authenticated server-to-server mode.
-//     2. Set ALLOW_ANONYMOUS_SCORES=true for the shared leaderboard
-//        (casual browser game with no user accounts). Defense-in-depth
-//        layers (challenge tokens, rate limiting, cooldown) activate
-//        automatically in this mode.
+// Default auth mode (Docker image ships with ALLOW_ANONYMOUS_SCORES=true):
+//   The image enables the shared global leaderboard out of the box for the
+//   casual browser game (no user accounts). Defense-in-depth layers
+//   (challenge tokens, rate limiting, cooldown) activate automatically.
+//   To require authenticated submissions instead:
+//     1. Set SCORE_API_KEY and ALLOW_ANONYMOUS_SCORES=false.
+//     2. Route browser submissions through a backend proxy.
 //
-// ALLOW_ANONYMOUS_SCORES (env var): Controls anonymous score submissions in
-// production without SCORE_API_KEY. The Docker image defaults to "false"
-// (secure-by-default). Set to "true" to enable the shared global leaderboard
-// for casual browser play. Set to "false" and provide SCORE_API_KEY for
-// authenticated-only mode.
+// ALLOW_ANONYMOUS_SCORES (env var): Controls anonymous score submissions.
+// The Docker image defaults to "true" to enable the shared global leaderboard
+// for casual browser play. Set to "false" to disable anonymous writes —
+// the server will still start but POST /api/scores returns 403 unless
+// SCORE_API_KEY is also set.
 // When enabled, defense-in-depth layers (challenge tokens, rate limiting,
 // cooldown, CORS denial) provide abuse resistance appropriate for a casual
 // game leaderboard.
@@ -90,30 +89,29 @@ const MAX_SCORE_VALUE = 999999;
 //   6. CORS denial (no Access-Control-Allow-Origin header)
 //   7. CSP connect-src: 'self' (blocks cross-origin script access)
 //   8. Server binds 127.0.0.1 only (nginx proxy required)
-// In production with ALLOW_ANONYMOUS_SCORES=false, SCORE_API_KEY is required.
+// When ALLOW_ANONYMOUS_SCORES=false and no SCORE_API_KEY, server starts in
+// read-only mode: GET /api/scores works, POST returns 403.
 const SCORE_API_KEY = process.env.SCORE_API_KEY || '';
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const ALLOW_ANONYMOUS_SCORES = process.env.ALLOW_ANONYMOUS_SCORES === 'true';
+const ALLOW_ANONYMOUS_SCORES = process.env.ALLOW_ANONYMOUS_SCORES !== 'false';
 
-// Production enforcement: reject startup if SCORE_API_KEY is not set and
-// ALLOW_ANONYMOUS_SCORES is not explicitly enabled. This prevents accidental
-// deployment of an unauthenticated write endpoint in production.
-if (NODE_ENV === 'production' && !SCORE_API_KEY && !ALLOW_ANONYMOUS_SCORES) {
-  console.error(
-    'FATAL: NODE_ENV=production but SCORE_API_KEY is not set. ' +
-    'Refusing to start with an unauthenticated write endpoint in production. ' +
-    'Fix: set SCORE_API_KEY via environment variable, or explicitly opt in to ' +
-    'anonymous submissions with ALLOW_ANONYMOUS_SCORES=true.'
+// Read-only mode: when anonymous scores are disabled and no API key is set,
+// the server starts but rejects all POST requests. This ensures the health
+// endpoint and GET /api/scores remain available (graceful degradation).
+const READ_ONLY_MODE = !ALLOW_ANONYMOUS_SCORES && !SCORE_API_KEY;
+
+if (READ_ONLY_MODE) {
+  console.warn(
+    'WARNING: ALLOW_ANONYMOUS_SCORES=false and no SCORE_API_KEY set. ' +
+    'Server starting in read-only mode — GET /api/scores works, POST is rejected. ' +
+    'To enable score submissions: set ALLOW_ANONYMOUS_SCORES=true (default) or provide SCORE_API_KEY.'
   );
-  process.exit(1);
 }
 
 if (NODE_ENV === 'production' && !SCORE_API_KEY && ALLOW_ANONYMOUS_SCORES) {
-  console.warn(
-    'WARNING: NODE_ENV=production with ALLOW_ANONYMOUS_SCORES=true (explicit opt-in). ' +
-    'Score submissions accepted without API-key authentication. ' +
-    'Abuse resistance: challenge tokens (one-time, IP-bound, 5-min TTL), ' +
-    'rate limiting (3/min/IP), cooldown (10s/IP), duplicate detection. ' +
+  console.log(
+    'INFO: Shared leaderboard mode — anonymous score submissions enabled. ' +
+    'Abuse resistance: challenge tokens, rate limiting (3/min/IP), cooldown (10s/IP), duplicate detection. ' +
     'Accepted risk: determined attacker with multiple IPs could insert fake scores. ' +
     'For stronger guarantees, set SCORE_API_KEY and use a backend proxy.'
   );
@@ -121,7 +119,7 @@ if (NODE_ENV === 'production' && !SCORE_API_KEY && ALLOW_ANONYMOUS_SCORES) {
 
 if (SCORE_API_KEY) {
   console.log('INFO: SCORE_API_KEY is set — POST /api/scores requires X-API-Key header.');
-} else if (NODE_ENV !== 'production') {
+} else if (NODE_ENV !== 'production' && ALLOW_ANONYMOUS_SCORES) {
   console.log(
     'INFO: SCORE_API_KEY is not set — POST /api/scores accepts anonymous submissions. ' +
     'This is the expected configuration for local/demo browser-based deployments.'
@@ -316,6 +314,13 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'POST') {
+    // Read-only mode: reject all writes when anonymous scores are disabled
+    // and no API key is configured. Server remains available for GET requests.
+    if (READ_ONLY_MODE) {
+      sendError(res, 403, 'Score submissions are disabled. Server is in read-only mode.');
+      return;
+    }
+
     // Only trust X-Real-IP when the connection originates from loopback
     // (i.e. from our nginx reverse proxy). The server binds to 127.0.0.1
     // so all legitimate connections are loopback, but this guard defends
