@@ -69,6 +69,13 @@ VOLUME /data
 ENV NODE_ENV=production
 ENV ALLOW_ANONYMOUS_SCORES=true
 EXPOSE 8080
+# HEALTHCHECK verifies the API is reachable through nginx. If the Node.js API
+# is down, nginx returns 502 on /api/health and wget fails → container unhealthy.
+# The crash sentinel (/tmp/api_crash_exhausted) catches crash-loop exhaustion.
+# Combined with STRICT_STARTUP (see start.sh), this means:
+#   STRICT_STARTUP=false (default): container starts even if API is slow to init,
+#     but HEALTHCHECK will mark it unhealthy if API never becomes available.
+#   STRICT_STARTUP=true: container exits immediately if API smoke test fails.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD test ! -f /tmp/api_crash_exhausted && wget -qO- http://127.0.0.1:8080/api/health || exit 1
 CMD ["/app/start.sh"]
