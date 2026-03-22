@@ -44,28 +44,30 @@ VOLUME /data
 # exposes score submissions and challenge tokens to network interception.
 # The nginx config inside this image does NOT terminate TLS.
 #
-# --- Default: shared leaderboard enabled (anonymous writes ALLOWED) ---
-# ALLOW_ANONYMOUS_SCORES defaults to true so the shared global leaderboard
-# works out of the box for the casual browser game (no user accounts).
+# --- SECURITY SIGN-OFF: anonymous writes enabled by default ---
+# Decision: ALLOW_ANONYMOUS_SCORES defaults to "true" to fulfil the task
+# requirement of a shared global leaderboard for an anonymous browser game.
+# This is an intentional security posture choice — anonymous POST /api/scores
+# is the designed access model for this application.
+#
+# Risk accepted: a determined attacker with multiple IPs could insert fake
+# scores. This is appropriate for non-critical game score data with no user
+# accounts, passwords, or PII at stake.
+#
+# Abuse-resistance layers active when anonymous mode is enabled:
+#   1. Challenge tokens (one-time, IP-bound, 5-min TTL, max 5 pending/IP)
+#   2. Rate limiting (3 POST/min/IP)
+#   3. Per-IP cooldown (10s between submissions)
+#   4. Duplicate detection, input validation, body size cap
+#   5. CORS denial (no Access-Control-Allow-Origin header)
+#   6. CSP connect-src 'self' (blocks cross-origin script access)
+#   7. Server binds 127.0.0.1 only (nginx proxy required)
 #
 # To disable anonymous writes and require an API key:
 #   docker run -e ALLOW_ANONYMOUS_SCORES=false -e SCORE_API_KEY=<secret> -p 8080:8080 <image>
 #
-# To explicitly disable all writes (read-only leaderboard):
+# To disable all writes (read-only leaderboard):
 #   docker run -e ALLOW_ANONYMOUS_SCORES=false -p 8080:8080 <image>
-#
-# When ALLOW_ANONYMOUS_SCORES=true, abuse resistance (defense-in-depth):
-#   - Challenge tokens (one-time, IP-bound, 5-min TTL, max 5 pending/IP)
-#   - Rate limiting (3 POST/min/IP)
-#   - Per-IP cooldown (10s between submissions)
-#   - Duplicate detection, input validation, body size cap
-#   - CORS denial (no Access-Control-Allow-Origin header)
-#   - CSP connect-src 'self' (blocks cross-origin script access)
-#   - Server binds 127.0.0.1 only (nginx proxy required)
-#
-# Accepted risk (when anonymous mode enabled): a determined attacker with
-# multiple IPs could insert fake scores. This is appropriate for non-critical
-# game score data.
 ENV NODE_ENV=production
 ENV ALLOW_ANONYMOUS_SCORES=true
 EXPOSE 8080

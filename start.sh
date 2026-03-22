@@ -76,8 +76,12 @@ done
 # healthy while /api/scores is non-functional. Default is false so the
 # static game (localStorage fallback) remains playable even if the API has
 # transient startup issues — graceful degradation over hard failure.
+# Note: HEALTHCHECK will still mark the container unhealthy if the API never
+# recovers, so orchestrators (Docker Swarm, Kubernetes) will take corrective
+# action even with STRICT_STARTUP=false.
 # Set to "true" in environments where a non-functional leaderboard API
-# should prevent the container from starting (e.g. integration tests).
+# should prevent the container from starting (e.g. integration tests,
+# staging environments with health-gate deployments).
 STRICT_STARTUP="${STRICT_STARTUP:-false}"
 
 if [ "$SMOKE_OK" = "false" ]; then
