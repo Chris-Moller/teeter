@@ -1,0 +1,139 @@
+{
+  "quality": "full",
+  "tasks": [
+    {
+      "id": "speed-hud",
+      "title": "Add real-time ball speed HUD indicator",
+      "description": "Add a speed indicator HUD element in the lower-left corner that displays the ball's current speed (magnitude of vx/vz velocity) during active gameplay. The indicator should be hidden on start/game-over screens and match the existing HUD styling.",
+      "acceptance_criteria": "1. A #speed div is visible in the lower-left corner during gameplay.\n2. Speed updates every frame using Math.sqrt(vx² + vz²), rounded to 1 decimal.\n3. Display format includes a unit label (e.g. '2.4 m/s').\n4. Hidden on start screen, game-over screen; visible only during active play.\n5. Visual style matches the existing #score HUD element (font, color, background pill, text-shadow).",
+      "claudeMd": "# Project Context\n\nYou are adding a speed indicator HUD to an existing Three.js ball-rolling game. The project is pure static HTML+JS served by nginx — no npm, no build step. Three.js v0.183.2 via CDN importmap.\n\n## File Structure\n- `index.html` — HTML + all CSS + importmap\n- `js/main.js` — Game loop, state management, DOM updates\n- `js/physics.js` — Ball physics (DO NOT MODIFY)\n- `js/renderer.js` — Three.js scene (DO NOT MODIFY)\n- `js/tracker.js` — MediaPipe head tracking (DO NOT MODIFY)\n- `Dockerfile` + `nginx.conf` — Docker build on port 8080\n\n## What to Implement\n\n### 1. index.html — Add #speed element and CSS\n\nAdd a `<div id=\"speed\">0.0 m/s</div>` element in the body, near the other HUD elements (after `<div id=\"score\">Score: 0</div>`).\n\nAdd CSS for `#speed` that matches the existing `#score` style but positioned in the lower-left:\n```css\n#speed {\n  position: fixed;\n  bottom: 16px;\n  left: 16px;\n  color: #fff;\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;\n  font-size: 1.2em;\n  font-weight: 700;\n  z-index: 10;\n  pointer-events: none;\n  text-shadow: 0 2px 4px rgba(0,0,0,0.5);\n  background: rgba(0,0,0,0.3);\n  padding: 6px 14px;\n  border-radius: 8px;\n  display: none;\n}\n```\n\n### 2. js/main.js — Wire up the speed display\n\nAt the top with other DOM refs, add:\n```js\nconst speedEl = document.getElementById('speed');\n```\n\nIn `init()`, where `scoreEl.style.display = 'block'` is set (around line 249), also add:\n```js\nspeedEl.style.display = 'block';\n```\n\nIn `gameLoop()`, inside the `if (state === 'playing' || state === 'falling')` block, after the `updatePhysics()` call and result is available, compute and display speed:\n```js\nconst speed = Math.sqrt(result.vx * result.vx + result.vz * result.vz);\nspeedEl.textContent = speed.toFixed(1) + ' m/s';\n```\nPlace this right after `updateCamera(result.z);` and before `updateCoinRotation(dt);`.\n\nIn `enterGameOver()`, hide the speed indicator:\n```js\nspeedEl.style.display = 'none';\n```\n\nIn `exitGameOver()`, show it again when play resumes (near where `state = 'playing'` is set at the end):\n```js\nspeedEl.style.display = 'block';\n```\n\n## Conventions\n- 2-space indent throughout all files\n- ES module imports/exports\n- camelCase for functions/variables\n- Match existing DOM manipulation patterns (use `.style.display` for show/hide, same as `scoreEl`)\n- Keep the speed element hidden by default in CSS (`display: none`), shown via JS\n\n## Gotchas\n- The physics result object already contains `vx` and `vz` — no physics changes needed.\n- Use `display: none` / `display: block` for visibility, not CSS classes — this matches how `#score` and `#leaderboard-btn` are shown/hidden.\n- The speed should still update during the `falling` state (state === 'falling') since the ball is still moving.\n- Don't forget to hide speed on game over AND show it again when exiting game over.\n\n## Build Verification\n- `docker build -t teeter .` must succeed\n- The speed indicator appears in lower-left during gameplay\n- The speed value changes as the ball moves (faster with mouth-open boost, slower with turtle powerup)",
+      "checklist": [
+        {
+          "id": "t1",
+          "description": "Add #speed div element to index.html body",
+          "steps": [
+            "Add <div id=\"speed\">0.0 m/s</div> after the #score div in index.html body",
+            "Verify the element is present in the HTML"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t2",
+          "description": "Add CSS styling for #speed that matches existing HUD style and positions it in the lower-left",
+          "steps": [
+            "Add #speed CSS rule in the <style> block with position:fixed, bottom:16px, left:16px",
+            "Match font-family, color, text-shadow, background, padding, border-radius from #score",
+            "Set font-size to 1.2em, font-weight 700, z-index 10, pointer-events none",
+            "Set display:none as default (hidden until gameplay starts)"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t3",
+          "description": "Add speedEl DOM reference and show/hide logic in main.js",
+          "steps": [
+            "Add const speedEl = document.getElementById('speed') with other DOM refs",
+            "In init(), add speedEl.style.display = 'block' alongside scoreEl display",
+            "In enterGameOver(), add speedEl.style.display = 'none'",
+            "In exitGameOver(), add speedEl.style.display = 'block'"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t4",
+          "description": "Compute and display ball speed each frame in gameLoop",
+          "steps": [
+            "After updatePhysics() result, compute speed = Math.sqrt(result.vx * result.vx + result.vz * result.vz)",
+            "Update speedEl.textContent = speed.toFixed(1) + ' m/s'",
+            "Verify speed updates continuously during playing and falling states"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t5",
+          "description": "Speed indicator is hidden on start and game-over screens",
+          "steps": [
+            "Verify #speed starts with display:none in CSS (hidden on start screen)",
+            "Verify enterGameOver() hides #speed",
+            "Verify exitGameOver() re-shows #speed"
+          ],
+          "passes": false
+        }
+      ],
+      "quality_checklist": [
+        {
+          "id": "q1",
+          "description": "Speed indicator CSS is consistent with existing HUD elements (#score)",
+          "steps": [
+            "Compare #speed CSS properties against #score CSS properties",
+            "Verify same font-family, color, text-shadow, background, padding, border-radius values",
+            "Verify position/size differences are intentional (bottom-left vs top-left, slightly smaller font)"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q2",
+          "description": "No unnecessary code additions — minimal diff, no over-engineering",
+          "steps": [
+            "Check that only index.html and js/main.js were modified",
+            "Verify no new functions or abstractions were created beyond what's needed",
+            "Verify no changes to physics.js, renderer.js, or tracker.js"
+          ],
+          "passes": false
+        },
+        {
+          "id": "q3",
+          "description": "Speed computation is correct and uses proper formula",
+          "steps": [
+            "Verify Math.sqrt(vx*vx + vz*vz) is used (not just vx+vz or similar)",
+            "Verify .toFixed(1) is used for 1 decimal place",
+            "Verify unit label 'm/s' is included in the display text"
+          ],
+          "passes": false
+        }
+      ]
+    }
+  ],
+  "integration": null,
+  "verification": {
+    "buildCommand": "docker build -t teeter .",
+    "runCommand": "docker run -d -p 8080:8080 teeter",
+    "readySignal": "listening|ready|started|Configuration complete",
+    "appType": "web",
+    "port": 8080,
+    "checks": [
+      {
+        "id": "v1",
+        "description": "Speed indicator is visible in the lower-left corner during gameplay",
+        "steps": [
+          "Open the game at http://localhost:8080",
+          "Grant camera access and wait for gameplay to start",
+          "Look for a speed readout (e.g. '2.0 m/s') in the lower-left corner",
+          "Verify it has a semi-transparent dark background pill matching the score style"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v2",
+        "description": "Speed value updates in real-time and responds to game mechanics",
+        "steps": [
+          "During gameplay, observe the speed value changing as the ball moves",
+          "Verify the value is formatted with 1 decimal place and 'm/s' unit",
+          "If turtle powerup is collected, verify speed value decreases (slowdown effect)"
+        ],
+        "passes": false
+      },
+      {
+        "id": "v3",
+        "description": "Speed indicator is hidden on start and game-over screens",
+        "steps": [
+          "On initial page load (before camera access), verify no speed indicator is visible",
+          "During gameplay, collide with an obstacle to trigger game over",
+          "Verify the speed indicator disappears on the game-over screen",
+          "After game over dismisses and gameplay resumes, verify speed indicator reappears"
+        ],
+        "passes": false
+      }
+    ]
+  }
+}
