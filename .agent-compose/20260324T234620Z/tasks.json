@@ -17,7 +17,7 @@
             "Verify computeEAR() correctly computes (dist(p2,p6) + dist(p3,p5)) / (2 * dist(p1,p4))",
             "Verify detectBlink() averages left and right EAR, compares against threshold, checks cooldown"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
@@ -28,7 +28,7 @@
             "Verify edge detection: triggered = lastEAR >= threshold && avgEAR < threshold",
             "Verify cooldown: performance.now() - lastBlinkTime >= BLINK_COOLDOWN"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t3",
@@ -38,7 +38,7 @@
             "Verify: if (blink && !ball.jumping && !ball.falling) { ball.jumping = true; ball.vy = JUMP_IMPULSE; }",
             "Verify JUMP_IMPULSE = 6.5 at top of file"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t4",
@@ -49,7 +49,7 @@
             "Verify landing: if (ball.y <= groundY) { ball.y = groundY; ball.vy = 0; ball.jumping = false; }",
             "Verify JUMP_GRAVITY = 12.0"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t5",
@@ -60,7 +60,7 @@
             "Verify coin collection also gated by !ball.jumping",
             "Verify turtle collection also gated by !ball.jumping"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t6",
@@ -70,7 +70,7 @@
             "Verify ball.vx and ball.x updates happen before/outside the jumping block",
             "Verify ball.jumping is added to resetBall() initialization"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t7",
@@ -81,7 +81,7 @@
             "Verify const blink = detectBlink() is called each frame",
             "Verify blink is passed to updatePhysics(dt, tiltAngle, pitch, mouthOpen, blink)"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t8",
@@ -91,7 +91,7 @@
             "Verify lastEAR = 1.0 and lastBlinkTime = 0 are reset",
             "Verify currentLandmarks is set to null or will be naturally refreshed"
           ],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -102,7 +102,7 @@
             "Verify detectBlink() reads from currentLandmarks (set by detectTilt) rather than calling detectForVideo again",
             "Verify detectTilt is always called before detectBlink in the game loop"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q2",
@@ -111,7 +111,7 @@
             "Calculate max jump height: JUMP_IMPULSE^2 / (2 * JUMP_GRAVITY) = 6.5^2 / 24 ≈ 1.76",
             "Verify OBSTACLE_HEIGHT in renderer.js is 1.0 — jump clears it with margin"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q3",
@@ -121,7 +121,7 @@
             "Check physics.js for any orphaned code paths",
             "Verify all new exports are consumed in main.js"
           ],
-          "passes": false
+          "passes": true
         }
       ]
     }
@@ -143,7 +143,7 @@
           "Verify js/tracker.js, js/physics.js, js/main.js, js/renderer.js are accessible",
           "Verify detectBlink is exported in tracker.js source"
         ],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v2",
@@ -153,7 +153,7 @@
           "Verify updatePhysics accepts 5 parameters (dt, tiltAngle, pitch, mouthOpen, blink)",
           "Verify ball.jumping state is included in the return object"
         ],
-        "passes": false
+        "passes": true
       }
     ]
   }
