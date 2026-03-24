@@ -33,6 +33,7 @@ const leaderboardPanel = document.getElementById('leaderboard-panel');
 const leaderboardList = document.getElementById('leaderboard-list');
 const leaderboardClose = document.getElementById('leaderboard-close');
 const slowdownIndicator = document.getElementById('slowdown-indicator');
+const speedEl = document.getElementById('speed');
 
 const STORAGE_KEY = 'teeter_highscores';
 const MAX_SCORES = 10;
@@ -147,6 +148,7 @@ function enterGameOver() {
     }, NON_QUALIFYING_DELAY);
   }
 
+  speedEl.style.display = 'none';
   gameoverOverlay.classList.add('visible');
 }
 
@@ -179,6 +181,7 @@ function exitGameOver() {
   updateScore(0);
   updateBallPosition(0, config.trackHeight / 2 + config.ballRadius, config.ballStartZ);
   updateCamera(config.ballStartZ);
+  speedEl.style.display = 'block';
   state = 'playing';
 }
 
@@ -247,6 +250,7 @@ async function init() {
     // Hide overlay, show score and leaderboard button, and start game
     overlay.classList.add('hidden');
     scoreEl.style.display = 'block';
+    speedEl.style.display = 'block';
     leaderboardBtn.style.display = 'block';
     updateScore(0);
     state = 'playing';
@@ -283,6 +287,9 @@ function gameLoop(timestamp) {
     updateBallPosition(result.x, result.y, result.z);
     updateBallRotation(result.vx, result.vz, dt);
     updateCamera(result.z);
+
+    const speed = Math.sqrt(result.vx * result.vx + result.vz * result.vz);
+    speedEl.textContent = speed.toFixed(1) + ' m/s';
 
     // Animate coins
     updateCoinRotation(dt);
