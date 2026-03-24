@@ -12,6 +12,14 @@ const FOREHEAD = 10;
 const UPPER_LIP = 13;
 const LOWER_LIP = 14;
 
+// EAR (Eye Aspect Ratio) landmark indices
+const RIGHT_EYE_EAR = [33, 159, 158, 133, 153, 145];
+const LEFT_EYE_EAR = [362, 386, 385, 263, 374, 380];
+
+// Blink detection constants
+const EAR_THRESHOLD = 0.21;
+const BLINK_COOLDOWN = 500;
+
 let faceLandmarker = null;
 let videoElement = null;
 let rawTilt = 0;
@@ -26,6 +34,13 @@ const SMOOTHING_FACTOR = 0.7;
 let calibrationOffset = 0.5;
 // When true, the next valid face detection will auto-calibrate the offset
 let needsCalibration = true;
+
+// Shared landmarks from detectTilt for reuse by detectBlink
+let currentLandmarks = null;
+
+// Blink detection state
+let lastEAR = 1.0;
+let lastBlinkTime = 0;
 
 export async function initTracker(stream) {
   // Create hidden video element — never added to DOM
@@ -80,6 +95,7 @@ export function detectTilt(timestamp) {
 
   if (results.faceLandmarks && results.faceLandmarks.length > 0) {
     const landmarks = results.faceLandmarks[0];
+    currentLandmarks = landmarks;
     const leftEye = landmarks[LEFT_EYE_OUTER];
     const rightEye = landmarks[RIGHT_EYE_OUTER];
 
@@ -126,6 +142,43 @@ export function detectMouthOpen() {
   return smoothedMouthOpen > MOUTH_OPEN_THRESHOLD;
 }
 
+function landmarkDist(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+function computeEAR(landmarks, indices) {
+  const p1 = landmarks[indices[0]];
+  const p2 = landmarks[indices[1]];
+  const p3 = landmarks[indices[2]];
+  const p4 = landmarks[indices[3]];
+  const p5 = landmarks[indices[4]];
+  const p6 = landmarks[indices[5]];
+  return (landmarkDist(p2, p6) + landmarkDist(p3, p5)) / (2.0 * landmarkDist(p1, p4));
+}
+
+export function detectBlink() {
+  if (!currentLandmarks) return false;
+
+  const rightEAR = computeEAR(currentLandmarks, RIGHT_EYE_EAR);
+  const leftEAR = computeEAR(currentLandmarks, LEFT_EYE_EAR);
+  const avgEAR = (rightEAR + leftEAR) / 2.0;
+
+  const triggered = lastEAR >= EAR_THRESHOLD && avgEAR < EAR_THRESHOLD;
+  const cooldownPassed = performance.now() - lastBlinkTime >= BLINK_COOLDOWN;
+
+  if (triggered && cooldownPassed) {
+    lastBlinkTime = performance.now();
+    lastEAR = avgEAR;
+    return true;
+  }
+
+  lastEAR = avgEAR;
+  return false;
+}
+
 export function resetTilt() {
   rawTilt = 0;
   smoothedTilt = 0;
@@ -135,4 +188,6 @@ export function resetTilt() {
   smoothedMouthOpen = 0;
   calibrationOffset = 0.5;
   needsCalibration = true;
+  lastEAR = 1.0;
+  lastBlinkTime = 0;
 }
