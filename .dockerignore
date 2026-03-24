@@ -1,5 +1,6 @@
 .git
 .github
+.agent-compose
 *.md
 tasks.json
 .dockerignore
