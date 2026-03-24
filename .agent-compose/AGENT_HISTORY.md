@@ -20,3 +20,10 @@
 - **Files changed**: .dockerignore
 - **Tests run**: no — no test suite exists (static HTML+JS project); validated HTML structure, JS syntax (node --check), and nginx.conf brace matching programmatically
 - **Outcome**: success — committed fix, CI should pass on re-run
+
+## conflict-resolver — 2026-03-24T23:23:30Z
+
+- **Conflict**: index.html and js/main.js — upstream added `#boost-indicator` CSS, `#level` HUD element, and level-related JS logic; feature branch added `#speed` HUD element and speed display JS logic
+- **Resolution**: Accepted both sides for all conflicts — kept upstream's boost-indicator styles, level element, and level logic alongside the feature branch's speed HUD styles, speed element, and speed display logic. Merged init/gameover visibility toggles to include both levelEl and speedEl.
+- **Tests run**: no — no test suite exists (static HTML+JS project)
+- **Outcome**: success
