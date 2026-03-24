@@ -8,6 +8,8 @@ const MAX_DT = 1 / 30; // Cap delta time to prevent physics explosions
 const COIN_COLLECT_RADIUS = 0.8;
 const TURTLE_COLLECT_RADIUS = 0.8;
 const SLOWDOWN_DURATION = 4;
+const JUMP_IMPULSE = 6.5;
+const JUMP_GRAVITY = 12.0;
 
 let ball = {};
 let trackConfig = {};
@@ -40,6 +42,7 @@ export function resetBall() {
     vy: 0,
     vz: FORWARD_SPEED,
     falling: false,
+    jumping: false,
   };
   coinsCollected = new Array(coins.length).fill(false);
   turtleCollected = false;
@@ -47,17 +50,17 @@ export function resetBall() {
   slowdownTimer = 0;
 }
 
-export function updatePhysics(dt, tiltAngle, pitch) {
+export function updatePhysics(dt, tiltAngle, pitch, blink) {
   dt = Math.min(dt, MAX_DT);
 
   if (ball.falling) {
     return updateFalling(dt);
   }
 
-  return updateOnTrack(dt, tiltAngle, pitch);
+  return updateOnTrack(dt, tiltAngle, pitch, blink);
 }
 
-function updateOnTrack(dt, tiltAngle, pitch) {
+function updateOnTrack(dt, tiltAngle, pitch, blink) {
   // Decrement slowdown timer
   if (slowdownActive) {
     slowdownTimer -= dt;
@@ -83,6 +86,24 @@ function updateOnTrack(dt, tiltAngle, pitch) {
   ball.x += ball.vx * dt;
   ball.z += ball.vz * dt;
 
+  // Jump initiation
+  if (blink && !ball.jumping && !ball.falling) {
+    ball.jumping = true;
+    ball.vy = JUMP_IMPULSE;
+  }
+
+  // Jump physics
+  if (ball.jumping) {
+    ball.vy -= JUMP_GRAVITY * dt;
+    ball.y += ball.vy * dt;
+    const groundY = trackConfig.trackHeight / 2 + trackConfig.ballRadius;
+    if (ball.y <= groundY) {
+      ball.y = groundY;
+      ball.vy = 0;
+      ball.jumping = false;
+    }
+  }
+
   // Track boundaries — check if ball center has gone past track edge
   const halfWidth = trackConfig.trackWidth / 2;
   if (Math.abs(ball.x) > halfWidth) {
@@ -92,7 +113,7 @@ function updateOnTrack(dt, tiltAngle, pitch) {
 
   // Obstacle collision — AABB check with ball radius margin
   let obstacleHit = false;
-  if (!ball.falling) {
+  if (!ball.falling && !ball.jumping) {
     const br = trackConfig.ballRadius;
     for (let i = 0; i < obstacles.length; i++) {
       const o = obstacles[i];
@@ -112,28 +133,32 @@ function updateOnTrack(dt, tiltAngle, pitch) {
 
   // Coin collection — distance check in XZ plane
   const newlyCollected = [];
-  for (let i = 0; i < coins.length; i++) {
-    if (coinsCollected[i]) continue;
-    const dx = ball.x - coins[i].x;
-    const dz = ball.z - coins[i].z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < COIN_COLLECT_RADIUS) {
-      coinsCollected[i] = true;
-      newlyCollected.push(i);
+  if (!ball.jumping) {
+    for (let i = 0; i < coins.length; i++) {
+      if (coinsCollected[i]) continue;
+      const dx = ball.x - coins[i].x;
+      const dz = ball.z - coins[i].z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < COIN_COLLECT_RADIUS) {
+        coinsCollected[i] = true;
+        newlyCollected.push(i);
+      }
     }
   }
 
   // Turtle collection — distance check in XZ plane
   let turtleJustCollected = false;
-  if (turtle && !turtleCollected) {
-    const dx = ball.x - turtle.x;
-    const dz = ball.z - turtle.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < TURTLE_COLLECT_RADIUS) {
-      turtleCollected = true;
-      turtleJustCollected = true;
-      slowdownActive = true;
-      slowdownTimer = SLOWDOWN_DURATION;
+  if (!ball.jumping) {
+    if (turtle && !turtleCollected) {
+      const dx = ball.x - turtle.x;
+      const dz = ball.z - turtle.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < TURTLE_COLLECT_RADIUS) {
+        turtleCollected = true;
+        turtleJustCollected = true;
+        slowdownActive = true;
+        slowdownTimer = SLOWDOWN_DURATION;
+      }
     }
   }
 
@@ -152,6 +177,7 @@ function updateOnTrack(dt, tiltAngle, pitch) {
     vx: ball.vx,
     vz: ball.vz,
     falling: ball.falling,
+    jumping: ball.jumping,
     needsReset: false,
     obstacleHit,
     coinsCollected: newlyCollected,
@@ -178,6 +204,7 @@ function updateFalling(dt) {
     vx: ball.vx,
     vz: ball.vz,
     falling: true,
+    jumping: false,
     needsReset,
     obstacleHit: false,
     coinsCollected: [],

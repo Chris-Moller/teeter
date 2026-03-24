@@ -16,7 +16,7 @@ import {
   hideTurtle,
 } from './renderer.js';
 
-import { initTracker, detectTilt, detectPitch, resetTilt } from './tracker.js';
+import { initTracker, detectTilt, detectPitch, detectBlink, resetTilt } from './tracker.js';
 import { initPhysics, updatePhysics, resetBall, refreshLevel } from './physics.js';
 
 const overlay = document.getElementById('overlay');
@@ -272,12 +272,13 @@ function gameLoop(timestamp) {
   lastTime = timestamp;
 
   if (state === 'playing' || state === 'falling') {
-    // Get head tilt and pitch
+    // Get head tilt, pitch, and blink
     const tiltAngle = detectTilt(timestamp);
     const pitch = detectPitch();
+    const blink = detectBlink();
 
     // Update physics
-    const result = updatePhysics(dt, tiltAngle, pitch);
+    const result = updatePhysics(dt, tiltAngle, pitch, blink);
 
     // Update renderer
     updateBallPosition(result.x, result.y, result.z);
