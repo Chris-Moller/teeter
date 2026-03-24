@@ -102,10 +102,13 @@ export function detectTilt(timestamp) {
     rawPitch = nose.y - forehead.y;
     smoothedPitch = smoothedPitch * SMOOTHING_FACTOR + rawPitch * (1 - SMOOTHING_FACTOR);
 
-    // Compute mouth openness from upper and lower lip distance
+    // Compute mouth openness from upper and lower lip distance,
+    // normalized by inter-eye distance for scale independence
     const upperLip = landmarks[UPPER_LIP];
     const lowerLip = landmarks[LOWER_LIP];
-    rawMouthOpen = lowerLip.y - upperLip.y;
+    const mouthDist = lowerLip.y - upperLip.y;
+    const eyeDist = Math.abs(rightEye.x - leftEye.x);
+    rawMouthOpen = eyeDist > 0.01 ? mouthDist / eyeDist : 0;
     smoothedMouthOpen = smoothedMouthOpen * SMOOTHING_FACTOR + rawMouthOpen * (1 - SMOOTHING_FACTOR);
   }
 
@@ -117,9 +120,9 @@ export function detectPitch() {
 }
 
 export function detectMouthOpen() {
-  // Threshold tuned for normalized landmark coordinates;
-  // typical closed mouth ~0.01-0.02, open mouth ~0.04+
-  const MOUTH_OPEN_THRESHOLD = 0.035;
+  // Threshold for mouth openness normalized by inter-eye distance;
+  // typical closed mouth ~0.01-0.03, open mouth ~0.15+
+  const MOUTH_OPEN_THRESHOLD = 0.1;
   return smoothedMouthOpen > MOUTH_OPEN_THRESHOLD;
 }
 
