@@ -12,43 +12,43 @@
           "id": "t1",
           "description": "All 43 existing integration tests pass",
           "steps": ["Run `node api/server.test.js`", "Verify output shows '43 tests, 43 passed, 0 failed'", "If any test fails, investigate and fix the root cause"],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
           "description": "Backend API persists scores to shared data store",
           "steps": ["Read api/server.js", "Verify POST /api/scores writes to /data/scores.json via writeScores()", "Verify GET /api/scores reads from the same file via readScores()", "Confirm atomic write pattern (temp file + rename)"],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t3",
           "description": "Frontend displays global leaderboard from API",
           "steps": ["Read js/main.js", "Verify loadScoresAsync() fetches from /api/scores", "Verify renderLeaderboard() displays the fetched scores in a table with rank, name, score columns"],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t4",
           "description": "Name entry flow is preserved",
           "steps": ["Read index.html and verify #name-entry form exists with input and submit button", "Read js/main.js and verify submitScore() sends name with score via addScoreAsync()", "Verify nameInput has maxlength=15 matching server's MAX_NAME_LENGTH"],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t5",
           "description": "localStorage fallback works when backend unreachable",
           "steps": ["Read js/main.js loadScoresAsync() and confirm catch block falls back to loadLocalScores()", "Read addScoreAsync() and confirm network errors (not server rejections) fall back to localStorage", "Verify saveLocalScores() syncs API data to localStorage for offline use"],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t6",
           "description": "Server-side validation prevents trivial abuse",
           "steps": ["Read api/server.js POST handler", "Verify score validated as positive integer 1–999999", "Verify name validated as non-empty string, max 15 chars, control chars stripped", "Verify challenge token required and one-time-use", "Verify rate limiting (3 POST/min/IP) and cooldown (10s) active"],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t7",
           "description": "Docker/nginx configuration supports the backend integration",
           "steps": ["Read nginx.conf and verify location /api/ proxy_pass to 127.0.0.1:3001", "Read Dockerfile and verify Node.js installed, server.js copied to /app/api/", "Read start.sh and verify API supervisor with bounded restarts and smoke test"],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -56,7 +56,7 @@
           "id": "q1",
           "description": "No unused code or dead imports in modified files",
           "steps": ["Check for any commented-out code blocks", "Verify no unused variables or imports"],
-          "passes": false
+          "passes": true
         }
       ]
     }
@@ -73,19 +73,19 @@
         "id": "v1",
         "description": "API health endpoint responds with 200",
         "steps": ["Start the server with `node api/server.js`", "GET http://127.0.0.1:3001/api/health", "Verify response is {\"status\":\"ok\"} with HTTP 200"],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v2",
         "description": "Full score submission and retrieval flow works end-to-end",
         "steps": ["GET /api/challenge to obtain a token", "POST /api/scores with {\"name\":\"Test\",\"score\":42} and X-Challenge-Token header", "Verify HTTP 201 with scores array", "GET /api/scores and verify the submitted score appears"],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v3",
         "description": "Server-side validation rejects invalid input",
         "steps": ["POST /api/scores with score=0 — expect 400", "POST /api/scores with empty name — expect 400", "POST /api/scores without challenge token — expect 403"],
-        "passes": false
+        "passes": true
       }
     ]
   }
