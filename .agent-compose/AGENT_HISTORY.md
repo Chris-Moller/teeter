@@ -15,3 +15,10 @@
 - **Error Handling**: clean — no new error handling patterns introduced; pre-existing empty catch blocks in main.js noted but not in scope
 - **Test Coverage**: 10 gaps identified (ratings 7–10) but project has no test infrastructure; this is a pre-existing condition, not a regression
 - **Outcome**: success / exit_signal: true
+
+## conflict-resolver — 2026-03-24T23:16:20Z
+
+- **Conflict**: js/main.js, js/physics.js, js/tracker.js — upstream added calibration, mouth-open boost, rolling track chunks, and ID-based coin/turtle collection; feature branch added blink-to-jump mechanic with EAR detection and jump physics
+- **Resolution**: Merged both intents — kept upstream's calibrate(), detectMouthOpen(), updateLevelData(), rolling track updates, and ID-based collection system; integrated feature branch's detectBlink(), jump physics (JUMP_IMPULSE/JUMP_GRAVITY), and !ball.jumping guards for collections; updatePhysics now takes both mouthOpen and blink params; resetTilt resets both mouth-open and blink state
+- **Tests run**: yes — node --check passed on all 3 files
+- **Outcome**: success
