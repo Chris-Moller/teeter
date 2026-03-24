@@ -30,7 +30,6 @@ let currentLandmarks = null;
 
 // Blink detection state
 let lastEAR = 1.0;
-let blinkDetected = false;
 let lastBlinkTime = 0;
 
 export async function initTracker(stream) {
@@ -134,5 +133,4 @@ export function resetTilt() {
   rawPitch = 0;
   smoothedPitch = 0;
   lastEAR = 1.0;
-  blinkDetected = false;
 }

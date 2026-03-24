@@ -148,17 +148,15 @@ function updateOnTrack(dt, tiltAngle, pitch, blink) {
 
   // Turtle collection — distance check in XZ plane
   let turtleJustCollected = false;
-  if (!ball.jumping) {
-    if (turtle && !turtleCollected) {
-      const dx = ball.x - turtle.x;
-      const dz = ball.z - turtle.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < TURTLE_COLLECT_RADIUS) {
-        turtleCollected = true;
-        turtleJustCollected = true;
-        slowdownActive = true;
-        slowdownTimer = SLOWDOWN_DURATION;
-      }
+  if (!ball.jumping && turtle && !turtleCollected) {
+    const dx = ball.x - turtle.x;
+    const dz = ball.z - turtle.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < TURTLE_COLLECT_RADIUS) {
+      turtleCollected = true;
+      turtleJustCollected = true;
+      slowdownActive = true;
+      slowdownTimer = SLOWDOWN_DURATION;
     }
   }
 
