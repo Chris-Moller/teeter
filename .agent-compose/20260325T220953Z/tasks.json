@@ -1,0 +1,65 @@
+{
+  "quality": "skip",
+  "tasks": [
+    {
+      "id": "main",
+      "title": "Invert head tilt controls to fix left/right mapping",
+      "description": "Negate the tiltAngle value in main.js before passing it to updatePhysics() to correct the inverted head tilt controls. The tracker.js already applies a negation that incorrectly inverts the mapping, but tracker.js is marked DO NOT MODIFY, so the fix goes in the consumer.",
+      "acceptance_criteria": "When the user tilts their head to the left, the ball moves to the left. When the user tilts their head to the right, the ball moves to the right.",
+      "claudeMd": "# Project Context\n\nYou are fixing an inverted head tilt control in a Three.js ball-rolling game.\n\n## Codebase\n\nPure static HTML+JS served by nginx. No npm, no build step. Three.js v0.183.2 via CDN importmap.\n\n- `index.html` — Main page with Three.js importmap, overlay UI, and all CSS\n- `js/main.js` — Game loop and state management\n- `js/physics.js` — Ball physics, collision detection\n- `js/renderer.js` — Three.js scene, mesh creation, level generation\n- `js/tracker.js` — MediaPipe head tilt detection (**DO NOT MODIFY**)\n- `Dockerfile` + `nginx.conf` — Docker build serving on port 8080\n\n## Bug\n\nHead tilt controls are inverted. Tilting left moves ball right, tilting right moves ball left.\n\n## Root Cause\n\nIn `js/tracker.js:59`, there is a negation: `rawTilt = -Math.atan2(...)` that incorrectly inverts the tilt mapping. Since tracker.js must NOT be modified, the fix is applied in the consumer.\n\n## Exact Fix\n\nIn `js/main.js`, line 280, change:\n```js\nconst result = updatePhysics(dt, tiltAngle, pitch);\n```\nto:\n```js\nconst result = updatePhysics(dt, -tiltAngle, pitch);\n```\n\nThat's the entire fix. One character change.\n\n## Conventions\n- 2-space indent\n- ES module imports/exports\n- No unnecessary comments for obvious changes\n\n## Build\n- `docker build -t teeter .` must succeed\n- No test suite exists",
+      "checklist": [
+        {
+          "id": "t1",
+          "description": "Negate tiltAngle in main.js updatePhysics call",
+          "steps": [
+            "Open js/main.js",
+            "Find line 280: `const result = updatePhysics(dt, tiltAngle, pitch);`",
+            "Change to: `const result = updatePhysics(dt, -tiltAngle, pitch);`",
+            "Verify the edit is correct with Read tool"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t2",
+          "description": "Docker build succeeds",
+          "steps": [
+            "Run `docker build -t teeter .`",
+            "Verify build completes without errors"
+          ],
+          "passes": false
+        }
+      ],
+      "quality_checklist": [
+        {
+          "id": "q1",
+          "description": "Only the tiltAngle parameter is negated, no other changes made",
+          "steps": [
+            "Run git diff to confirm only one line changed",
+            "Verify tracker.js was NOT modified"
+          ],
+          "passes": false
+        }
+      ]
+    }
+  ],
+  "integration": null,
+  "verification": {
+    "buildCommand": "docker build -t teeter .",
+    "runCommand": "docker run -d -p 8080:8080 teeter",
+    "readySignal": "listening|ready|started|Configuration complete",
+    "appType": "web",
+    "port": 8080,
+    "checks": [
+      {
+        "id": "v1",
+        "description": "Head tilt left moves ball left, head tilt right moves ball right",
+        "steps": [
+          "Start the app in a browser with camera access",
+          "Tilt head to the left — ball should move to the left",
+          "Tilt head to the right — ball should move to the right"
+        ],
+        "passes": false
+      }
+    ]
+  }
+}
