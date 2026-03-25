@@ -1,5 +1,6 @@
 const GRAVITY = 9.8;
-const DIRECT_SENSITIVITY = 8.0;
+export const DEFAULT_SENSITIVITY = 8.0;
+let directSensitivity = DEFAULT_SENSITIVITY;
 const RESPONSE_RATE = 6.0;
 const FORWARD_SPEED = 2.0;
 const PITCH_SENSITIVITY = 3.0;
@@ -72,7 +73,7 @@ function updateOnTrack(dt, tiltAngle, pitch) {
   const effectiveMax = slowdownActive ? MAX_SPEED / 2 : MAX_SPEED;
 
   // Direct lateral velocity from head tilt with smooth interpolation
-  const targetVx = tiltAngle * DIRECT_SENSITIVITY;
+  const targetVx = tiltAngle * directSensitivity;
   ball.vx += (targetVx - ball.vx) * RESPONSE_RATE * dt;
 
   // Forward motion modulated by pitch (forward tilt speeds up, backward slows down)
@@ -193,6 +194,14 @@ export function refreshLevel(config) {
   coinsCollected = new Array(coins.length).fill(false);
   turtle = config.turtle || null;
   turtleCollected = false;
+}
+
+export function setSensitivity(value) {
+  directSensitivity = value;
+}
+
+export function getSensitivity() {
+  return directSensitivity;
 }
 
 export function getBallState() {

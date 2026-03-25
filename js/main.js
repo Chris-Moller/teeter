@@ -17,7 +17,7 @@ import {
 } from './renderer.js';
 
 import { initTracker, detectTilt, detectPitch, resetTilt } from './tracker.js';
-import { initPhysics, updatePhysics, resetBall, refreshLevel } from './physics.js';
+import { initPhysics, updatePhysics, resetBall, refreshLevel, setSensitivity, getSensitivity, DEFAULT_SENSITIVITY } from './physics.js';
 
 const overlay = document.getElementById('overlay');
 const subtitle = overlay.querySelector('.subtitle');
@@ -33,6 +33,13 @@ const leaderboardPanel = document.getElementById('leaderboard-panel');
 const leaderboardList = document.getElementById('leaderboard-list');
 const leaderboardClose = document.getElementById('leaderboard-close');
 const slowdownIndicator = document.getElementById('slowdown-indicator');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsPanel = document.getElementById('settings-panel');
+const settingsClose = document.getElementById('settings-close');
+const sensitivitySlider = document.getElementById('sensitivity-slider');
+const sensitivityValue = document.getElementById('sensitivity-value');
+const sensitivityLabel = document.getElementById('sensitivity-label');
+const sensitivityReset = document.getElementById('sensitivity-reset');
 
 const STORAGE_KEY = 'teeter_highscores';
 const MAX_SCORES = 10;
@@ -88,6 +95,52 @@ function addScore(name, value) {
   const trimmed = scores.slice(0, MAX_SCORES);
   saveScores(trimmed);
   return trimmed;
+}
+
+// --- Sensitivity settings ---
+
+const SENSITIVITY_KEY = 'teeter_sensitivity';
+const SENSITIVITY_MIN = 5;
+const SENSITIVITY_MAX = 30;
+
+function loadSensitivity() {
+  try {
+    const raw = localStorage.getItem(SENSITIVITY_KEY);
+    if (raw === null) return DEFAULT_SENSITIVITY;
+    const val = parseFloat(raw);
+    if (isNaN(val)) return DEFAULT_SENSITIVITY;
+    return Math.max(SENSITIVITY_MIN, Math.min(SENSITIVITY_MAX, val));
+  } catch {
+    return DEFAULT_SENSITIVITY;
+  }
+}
+
+function saveSensitivity(value) {
+  try {
+    localStorage.setItem(SENSITIVITY_KEY, String(value));
+  } catch {
+    // storage unavailable — silently fail
+  }
+}
+
+function getSensitivityLabel(value) {
+  if (value <= 10) return 'Low';
+  if (value <= 18) return 'Medium';
+  return 'High';
+}
+
+function updateSensitivityDisplay() {
+  const val = parseFloat(sensitivitySlider.value);
+  sensitivityValue.textContent = val.toFixed(1);
+  sensitivityLabel.textContent = getSensitivityLabel(val);
+}
+
+function showSettings() {
+  settingsPanel.classList.add('visible');
+}
+
+function hideSettings() {
+  settingsPanel.classList.remove('visible');
 }
 
 // --- Leaderboard panel ---
@@ -209,6 +262,40 @@ leaderboardPanel.addEventListener('click', (e) => {
   }
 });
 
+// --- Settings event listeners ---
+
+settingsBtn.addEventListener('click', () => {
+  if (settingsPanel.classList.contains('visible')) {
+    hideSettings();
+  } else {
+    showSettings();
+  }
+});
+
+settingsClose.addEventListener('click', () => {
+  hideSettings();
+});
+
+settingsPanel.addEventListener('click', (e) => {
+  if (e.target === settingsPanel) {
+    hideSettings();
+  }
+});
+
+sensitivitySlider.addEventListener('input', () => {
+  const val = parseFloat(sensitivitySlider.value);
+  setSensitivity(val);
+  saveSensitivity(val);
+  updateSensitivityDisplay();
+});
+
+sensitivityReset.addEventListener('click', () => {
+  sensitivitySlider.value = DEFAULT_SENSITIVITY;
+  setSensitivity(DEFAULT_SENSITIVITY);
+  saveSensitivity(DEFAULT_SENSITIVITY);
+  updateSensitivityDisplay();
+});
+
 // --- Init & game loop ---
 
 async function init() {
@@ -248,6 +335,14 @@ async function init() {
     overlay.classList.add('hidden');
     scoreEl.style.display = 'block';
     leaderboardBtn.style.display = 'block';
+    settingsBtn.style.display = 'block';
+
+    // Load persisted sensitivity
+    const savedSensitivity = loadSensitivity();
+    setSensitivity(savedSensitivity);
+    sensitivitySlider.value = savedSensitivity;
+    updateSensitivityDisplay();
+
     updateScore(0);
     state = 'playing';
     lastTime = performance.now();
