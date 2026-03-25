@@ -60,23 +60,10 @@ const countScores = db.prepare('SELECT COUNT(*) as count FROM scores');
 const insertScore = db.prepare(
   'INSERT INTO scores (name, score) VALUES (?, ?)'
 );
-const deleteLowestExcess = db.prepare(
-  'DELETE FROM scores WHERE id = (SELECT id FROM scores ORDER BY score ASC, id ASC LIMIT 1)'
-);
 
-// Transactional insert-and-prune: insert new score, then remove one row at a
-// time until at most MAX_SCORES remain. This avoids a broad DELETE and limits
-// each deletion to exactly one row.
-const insertAndPrune = db.transaction((name, score) => {
-  insertScore.run(name, score);
-  const { count } = countScores.get();
-  let excess = count - MAX_SCORES;
-  while (excess > 0) {
-    const result = deleteLowestExcess.run();
-    if (result.changes === 0) break; // safety guard
-    excess--;
-  }
-});
+// Note: All historical scores are retained in the database. Only the top
+// MAX_SCORES are ever returned by the API. No rows are deleted, so data is
+// preserved if requirements expand (e.g. audit, analytics, broader history).
 
 // Middleware
 app.use(express.json({ limit: '1kb' }));
@@ -145,8 +132,8 @@ app.post('/api/scores', scoreSubmitLimiter, (req, res) => {
       }
     }
 
-    // Insert and prune inside a transaction
-    insertAndPrune(sanitizedName, score);
+    // Insert score (all historical scores are retained; only top N are queried)
+    insertScore.run(sanitizedName, score);
 
     const scores = getTopScores.all(MAX_SCORES);
     res.status(201).json({ qualified: true, scores });

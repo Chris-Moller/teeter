@@ -144,28 +144,64 @@ async function addScore(name, value) {
 }
 
 function renderLeaderboard(scores, offline) {
+  leaderboardList.textContent = '';
+
   if (!scores || scores.length === 0) {
-    leaderboardList.innerHTML = offline
-      ? '<p class="lb-empty">Could not reach server. Please try again later.</p>'
-      : '<p class="lb-empty">No scores yet.</p>';
+    const p = document.createElement('p');
+    p.className = 'lb-empty';
+    p.textContent = offline
+      ? 'Could not reach server. Please try again later.'
+      : 'No scores yet.';
+    leaderboardList.appendChild(p);
     return;
   }
-  let html = '';
+
   if (offline) {
-    html += '<p class="lb-empty">Could not reach server. Showing cached scores.</p>';
+    const p = document.createElement('p');
+    p.className = 'lb-empty';
+    p.textContent = 'Could not reach server. Showing cached scores.';
+    leaderboardList.appendChild(p);
   }
-  html += '<table><thead><tr><th class="lb-rank">#</th><th class="lb-name">Name</th><th class="lb-score">Score</th></tr></thead><tbody>';
+
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const [cls, label] of [['lb-rank', '#'], ['lb-name', 'Name'], ['lb-score', 'Score']]) {
+    const th = document.createElement('th');
+    th.className = cls;
+    th.textContent = label;
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
   for (let i = 0; i < scores.length; i++) {
-    const e = scores[i];
-    const escapedName = e.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    html += '<tr><td class="lb-rank">' + (i + 1) + '</td><td class="lb-name">' + escapedName + '</td><td class="lb-score">' + e.score + '</td></tr>';
+    const row = document.createElement('tr');
+    const rankTd = document.createElement('td');
+    rankTd.className = 'lb-rank';
+    rankTd.textContent = String(i + 1);
+    const nameTd = document.createElement('td');
+    nameTd.className = 'lb-name';
+    nameTd.textContent = scores[i].name;
+    const scoreTd = document.createElement('td');
+    scoreTd.className = 'lb-score';
+    scoreTd.textContent = String(scores[i].score);
+    row.appendChild(rankTd);
+    row.appendChild(nameTd);
+    row.appendChild(scoreTd);
+    tbody.appendChild(row);
   }
-  html += '</tbody></table>';
-  leaderboardList.innerHTML = html;
+  table.appendChild(tbody);
+  leaderboardList.appendChild(table);
 }
 
 async function showLeaderboard() {
-  leaderboardList.innerHTML = '<p class="lb-empty">Loading scores...</p>';
+  leaderboardList.textContent = '';
+  const loadingP = document.createElement('p');
+  loadingP.className = 'lb-empty';
+  loadingP.textContent = 'Loading scores...';
+  leaderboardList.appendChild(loadingP);
   leaderboardPanel.classList.add('visible');
   const { scores, offline } = await fetchScores();
   renderLeaderboard(scores, offline);
