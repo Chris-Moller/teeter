@@ -7,3 +7,12 @@
 - **Summary**: Removed unused `getSensitivity` import from js/main.js. Remaining code is clean, follows existing patterns (leaderboard panel structure), and has no meaningful duplication or complexity issues.
 - **Tests run**: yes — JS syntax checks pass (node --check)
 - **Outcome**: success
+
+## reviewer — 2026-03-25T21:25:00Z
+- **Summary**: issues found and fixed
+- **Code quality**: 3 Important issues found — dead `getSensitivity` export (fixed), unvalidated `setSensitivity` input (acceptable given single validated caller), settings panel not closed on game over (fixed)
+- **Error handling**: clean — all MEDIUM issues follow existing codebase conventions (empty catch blocks match pre-existing leaderboard pattern)
+- **Test coverage**: no test infrastructure exists in project (pre-existing condition); 7 gaps identified but all are inherent to zero test suite
+- **quality_checklist**: 4 items verified (q1 ✅, q2 ✅ after fix, q3 ✅, q4 ✅)
+- **Fixes applied**: removed dead `getSensitivity()` export from physics.js, added `hideSettings()` call in `enterGameOver()` to close settings panel on game over
+- **Outcome**: success / exit_signal: true
