@@ -230,6 +230,7 @@ export function setSensitivity(value) {
 }
 
 
+
 export function getBallState() {
   return { ...ball };
 }
