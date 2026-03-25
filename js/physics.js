@@ -200,10 +200,6 @@ export function setSensitivity(value) {
   directSensitivity = value;
 }
 
-export function getSensitivity() {
-  return directSensitivity;
-}
-
 export function getBallState() {
   return { ...ball };
 }

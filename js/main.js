@@ -181,6 +181,7 @@ function hideLeaderboard() {
 // --- Game over flow ---
 
 function enterGameOver() {
+  hideSettings();
   finalScore = score;
   state = 'gameover';
 
