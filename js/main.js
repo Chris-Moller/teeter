@@ -277,7 +277,7 @@ function gameLoop(timestamp) {
     const pitch = detectPitch();
 
     // Update physics
-    const result = updatePhysics(dt, tiltAngle, pitch);
+    const result = updatePhysics(dt, -tiltAngle, pitch);
 
     // Update renderer
     updateBallPosition(result.x, result.y, result.z);
