@@ -17,7 +17,7 @@
             "Change to: `const result = updatePhysics(dt, -tiltAngle, pitch);`",
             "Verify the edit is correct with Read tool"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
@@ -26,7 +26,7 @@
             "Run `docker build -t teeter .`",
             "Verify build completes without errors"
           ],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -37,7 +37,7 @@
             "Run git diff to confirm only one line changed",
             "Verify tracker.js was NOT modified"
           ],
-          "passes": false
+          "passes": true
         }
       ]
     }
