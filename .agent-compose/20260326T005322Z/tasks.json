@@ -17,7 +17,7 @@
             "Ensure `.retry-btn` has `pointer-events: auto` and is hidden by default (`display: none`)",
             "Verify the button is inside the overlay so it inherits centering"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
@@ -27,7 +27,7 @@
             "If no WebGL context, call `showError()` with a message about WebGL not being supported",
             "Return early from init so no further initialization is attempted"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t3",
@@ -37,7 +37,7 @@
             "Each error type gets a distinct, actionable message",
             "Return early from init after showing the error"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t4",
@@ -47,7 +47,7 @@
             "On catch, call `showError()` with a message about head tracking model failure",
             "Return early from init after showing the error"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t5",
@@ -58,7 +58,7 @@
             "On timeout, show 'Loading timed out' error message with retry button",
             "Clear the timeout on successful init to prevent memory leaks"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t6",
@@ -69,7 +69,7 @@
             "Verify overlay.classList.add('error') sets red text color",
             "Wire retry button click to location.reload()"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t7",
@@ -80,7 +80,7 @@
             "Verify the game loop starts and state transitions to 'playing'",
             "Verify the retry button is NOT visible during/after successful init"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t8",
@@ -89,7 +89,7 @@
             "Run `docker build -t teeter .` from the project root",
             "Verify the build completes without errors"
           ],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -100,7 +100,7 @@
             "Check that WebGL error, camera errors, MediaPipe error, timeout error, and generic catch each have distinct handling",
             "Verify no error condition can trigger two showError() calls"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q2",
@@ -109,7 +109,7 @@
             "Verify clearTimeout is called in a finally block or equivalent",
             "Verify timeout doesn't fire after successful initialization"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q3",
@@ -120,7 +120,7 @@
             "Verify UPPER_SNAKE_CASE for constants",
             "Verify CSS follows existing patterns in index.html"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q4",
@@ -130,7 +130,7 @@
             "Verify only showError() makes it visible",
             "Verify it has pointer-events:auto so it's clickable despite overlay having pointer-events:none"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "q5",
@@ -138,7 +138,7 @@
           "steps": [
             "Verify git diff shows no changes to js/tracker.js, js/renderer.js, or js/physics.js"
           ],
-          "passes": false
+          "passes": true
         }
       ]
     }
