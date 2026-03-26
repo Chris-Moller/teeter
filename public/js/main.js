@@ -383,13 +383,10 @@ leaderboardPanel.addEventListener('click', (e) => { if (e.target === leaderboard
 // --- Init & game loop ---
 
 async function init() {
-  const overlayTitle = overlay.querySelector('.title');
-
   // WebGL pre-check
   const testCanvas = document.createElement('canvas');
   if (!testCanvas.getContext('webgl2') && !testCanvas.getContext('webgl')) {
     showError('WebGL is not supported by your browser.\nPlease use a modern browser with WebGL enabled.');
-    showRetryButton();
     return;
   }
 
@@ -398,7 +395,6 @@ async function init() {
   const timeoutId = setTimeout(() => {
     initTimedOut = true;
     showError('Loading is taking too long.\nPlease check your connection and try again.');
-    showRetryButton();
   }, INIT_TIMEOUT_MS);
 
   try {
@@ -423,7 +419,6 @@ async function init() {
     } catch (err) {
       clearTimeout(timeoutId);
       showError('Camera access is required to play.\nPlease allow camera access and reload.');
-      showRetryButton();
       return;
     }
 
@@ -437,7 +432,6 @@ async function init() {
       clearTimeout(timeoutId);
       console.error('MediaPipe initialization error:', err);
       showError('Failed to load face tracking model.\nPlease check your connection and try again.');
-      showRetryButton();
       return;
     }
 
@@ -465,7 +459,6 @@ async function init() {
     clearTimeout(timeoutId);
     console.error('Initialization error:', err);
     showError('Failed to initialize. Please reload and try again.');
-    showRetryButton();
   }
 }
 
@@ -474,9 +467,6 @@ function showError(message) {
   overlay.classList.add('error');
   subtitle.textContent = message;
   overlay.querySelector('.title').textContent = '';
-}
-
-function showRetryButton() {
   retryBtn.classList.add('visible');
 }
 
