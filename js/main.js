@@ -293,8 +293,10 @@ async function doInit() {
 
   calibrate(performance.now());
 
-  // Hide overlay, show score and leaderboard button, and start game
+  // If timeout already fired and showed an error, don't override it
   if (state === 'error') return;
+
+  // Hide overlay, show score and leaderboard button, and start game
   overlay.classList.add('hidden');
   scoreEl.style.display = 'block';
   levelEl.style.display = 'block';
@@ -318,8 +320,8 @@ async function init() {
   try {
     await doInit();
   } catch (err) {
+    console.error('Initialization error:', err);
     if (!timedOut) {
-      console.error('Initialization error:', err);
       showError('Failed to initialize.\nPlease reload and try again.');
     }
   } finally {
