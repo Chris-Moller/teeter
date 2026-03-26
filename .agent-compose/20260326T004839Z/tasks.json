@@ -1,0 +1,67 @@
+{
+  "quality": "skip",
+  "tasks": [
+    {
+      "id": "main",
+      "title": "Negate tiltAngle in public/js/main.js to fix inverted head tilt",
+      "description": "The production-served file public/js/main.js passes tiltAngle to updatePhysics without negation, resulting in inverted head tilt controls. The root js/main.js already has the fix (-tiltAngle). Apply the same one-character fix to public/js/main.js.",
+      "acceptance_criteria": "When the user tilts their head to the left, the ball moves to the left. When the user tilts their head to the right, the ball moves to the right. The fix must be applied in public/js/main.js line 387.",
+      "claudeMd": "# Project Context\n\nYou are fixing an inverted head tilt control in a browser-based ball game called Teeter.\n\n## What to do\n\nChange ONE line in `public/js/main.js`. In the `gameLoop` function (around line 387), change:\n```js\nconst result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);\n```\nto:\n```js\nconst result = updatePhysics(dt, -tiltAngle, pitch, mouthOpen);\n```\n\nThis matches the fix already present in `js/main.js:301`.\n\n## Why\n\nThe tilt signal is negated in tracker.js (mirror correction) and again in physics.js (lateral velocity calculation). Two negations cancel out, resulting in inverted controls. Adding a third negation here restores correct behavior.\n\n## Conventions\n- This is a vanilla JS project with ES modules, no build step\n- Do NOT modify tracker.js or physics.js\n- The only file to change is `public/js/main.js`\n- No new dependencies needed",
+      "checklist": [
+        {
+          "id": "t1",
+          "description": "Negate tiltAngle in public/js/main.js updatePhysics call",
+          "steps": [
+            "Open public/js/main.js",
+            "Find line ~387: `const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);`",
+            "Change to: `const result = updatePhysics(dt, -tiltAngle, pitch, mouthOpen);`",
+            "Verify the change matches js/main.js:301"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t2",
+          "description": "Verify both main.js files now have consistent tiltAngle negation",
+          "steps": [
+            "Grep for 'updatePhysics' in both js/main.js and public/js/main.js",
+            "Confirm both pass -tiltAngle (not tiltAngle) to updatePhysics"
+          ],
+          "passes": false
+        }
+      ],
+      "quality_checklist": [
+        {
+          "id": "q1",
+          "description": "Only the tiltAngle parameter is negated, no other changes",
+          "steps": [
+            "Run git diff to confirm exactly one character changed (added '-' prefix)",
+            "Verify no other files were modified"
+          ],
+          "passes": false
+        }
+      ]
+    }
+  ],
+  "integration": null,
+  "verification": {
+    "buildCommand": "echo 'No build step required — vanilla JS project'",
+    "runCommand": "node server.js",
+    "readySignal": "running on port",
+    "appType": "web",
+    "port": 8080,
+    "checks": [
+      {
+        "id": "v1",
+        "description": "Head tilt left moves ball left, head tilt right moves ball right",
+        "steps": [
+          "Start app with node server.js",
+          "Open browser to localhost:8080",
+          "Allow camera access and wait for head tracking to initialize",
+          "Tilt head to the left — verify ball moves left",
+          "Tilt head to the right — verify ball moves right"
+        ],
+        "passes": false
+      }
+    ]
+  }
+}
