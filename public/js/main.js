@@ -430,12 +430,16 @@ async function init() {
       await initTracker(stream);
     } catch (err) {
       clearTimeout(timeoutId);
+      stream.getTracks().forEach(t => t.stop());
       console.error('MediaPipe initialization error:', err);
       showError('Failed to load face tracking model.\nPlease check your connection and try again.');
       return;
     }
 
-    if (initTimedOut) return;
+    if (initTimedOut) {
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
 
     clearTimeout(timeoutId);
 
@@ -528,4 +532,4 @@ function gameLoop(timestamp) {
   render();
 }
 
-init();
+init().catch(err => console.error('Unhandled init failure:', err));

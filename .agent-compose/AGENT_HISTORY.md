@@ -35,3 +35,11 @@
 - **Summary**: Merged showRetryButton() into showError() since every error path always showed the retry button, eliminating 5 duplicate call sites and the standalone function. Removed unused overlayTitle variable.
 - **Tests run**: no — static HTML/JS project has no test suite
 - **Outcome**: success
+
+## reviewer — 2026-03-26T03:30:00Z
+- **Summary**: issues found and fixed — MediaStream not stopped on error/timeout paths (camera light stays on), init() called without .catch() handler
+- **quality_checklist**: 3 items verified (q1-q3 all pass)
+- **Fixes applied**:
+  - Added `stream.getTracks().forEach(t => t.stop())` in MediaPipe catch block and initTimedOut guard after initTracker
+  - Added `.catch()` handler to top-level `init()` call to prevent unhandled promise rejections
+- **Outcome**: success / exit_signal: true (0 blockers)
