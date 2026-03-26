@@ -33,3 +33,11 @@
 - **Tests run**: no — no test suite exists (static HTML+JS project)
 - **Fix applied**: #speed font-size changed from 1.2em to 1.6em to match #score and #level
 - **Outcome**: success
+
+## security-fixer — 2026-03-26T01:24:00Z
+
+- **Feedback**: Security review flagged that speed HUD changes were in "non-served" files, citing a nonexistent `server.js` with a `public/` static root and a Dockerfile that excludes root files. All three findings are false positives.
+- **Actions taken**: Verified that (1) no `server.js` exists in this project — it uses nginx, not Node.js; (2) no `public/` directory exists — the project has never used one; (3) the Dockerfile explicitly `COPY index.html` and `COPY js/` from the repository root into nginx's html directory. The speed HUD changes in root `index.html` and `js/main.js` ARE the served files. No code changes required — the implementation is already correct and deployed.
+- **Files changed**: none (findings are false positives)
+- **Tests run**: no — no test suite exists (static HTML+JS project)
+- **Outcome**: success — all findings are false positives; no code changes needed
