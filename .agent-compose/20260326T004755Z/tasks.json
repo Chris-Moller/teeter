@@ -12,25 +12,25 @@
           "id": "t1",
           "description": "Speed element exists in HTML with correct positioning (bottom:16px, left:16px)",
           "steps": ["Read index.html", "Verify #speed CSS has position:fixed, bottom:16px, left:16px", "Verify <div id='speed'> exists in body"],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
           "description": "Speed is computed each frame as Math.sqrt(vx²+vz²) and displayed with toFixed(1) + ' m/s'",
           "steps": ["Read js/main.js", "Verify gameLoop contains speed calculation from result.vx and result.vz", "Verify speedEl.textContent is set to speed.toFixed(1) + ' m/s'"],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t3",
           "description": "Speed indicator hidden on start/game-over, visible during active play",
           "steps": ["Verify #speed has display:none in CSS (hidden by default on page load)", "Verify speedEl.style.display = 'block' in init() when game starts", "Verify speedEl.style.display = 'none' in enterGameOver()", "Verify speedEl.style.display = 'block' in exitGameOver()"],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t4",
           "description": "Visual style matches existing HUD elements (score, level)",
           "steps": ["Compare #speed CSS with #score and #level CSS", "Verify same font-family, color, font-weight, text-shadow, background, border-radius, padding"],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -38,7 +38,7 @@
           "id": "q1",
           "description": "No unnecessary code duplication or dead code introduced",
           "steps": ["Check that speed element is only referenced where needed", "Verify no duplicate speed calculations exist"],
-          "passes": false
+          "passes": true
         }
       ]
     }
@@ -55,13 +55,13 @@
         "id": "v1",
         "description": "Speed indicator element exists and is styled correctly in the DOM",
         "steps": ["Start the static file server", "Open the page in browser", "Verify #speed element is present in the DOM", "Verify it is initially hidden (display:none)"],
-        "passes": false
+        "passes": true
       },
       {
         "id": "v2",
         "description": "Speed indicator becomes visible and updates during gameplay",
         "steps": ["Allow camera access and wait for game to start", "Verify #speed element becomes visible (display:block)", "Verify speed value updates each frame showing format like '4.5 m/s'"],
-        "passes": false
+        "passes": true
       }
     ]
   }
