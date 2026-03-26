@@ -17,7 +17,7 @@
             "Change to: `const result = updatePhysics(dt, -tiltAngle, pitch, mouthOpen);`",
             "Verify the change matches js/main.js:301"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
@@ -26,7 +26,7 @@
             "Grep for 'updatePhysics' in both js/main.js and public/js/main.js",
             "Confirm both pass -tiltAngle (not tiltAngle) to updatePhysics"
           ],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -37,7 +37,7 @@
             "Run git diff to confirm exactly one character changed (added '-' prefix)",
             "Verify no other files were modified"
           ],
-          "passes": false
+          "passes": true
         }
       ]
     }
