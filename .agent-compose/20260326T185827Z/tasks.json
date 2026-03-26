@@ -6,7 +6,7 @@
       "title": "Fix CSP to allow inline importmap",
       "description": "Add a Content-Security-Policy header in nginx.conf that includes the SHA-256 hash of the inline importmap script, allowing it to execute.",
       "acceptance_criteria": "The game loads successfully without CSP errors. The inline importmap is allowed via its SHA-256 hash. Docker build succeeds.",
-      "claudeMd": "# Fix CSP Inline Script Block\n\nYou are fixing a CSP (Content Security Policy) issue that prevents the game from loading.\n\n## Codebase\n\nPure static HTML+JS served by nginx in Docker. No npm, no build step.\n\n- `index.html` — Main page with inline `<style>`, inline `<script type=\"importmap\">`, and external module `<script type=\"module\" src=\"js/main.js\">`\n- `nginx.conf` — Nginx config serving on port 8080\n- `Dockerfile` — Docker build\n\n## Problem\n\nA CSP directive `script-src 'self' https://cdn.jsdelivr.net` blocks the inline `<script type=\"importmap\">`. The importmap MUST remain inline (browsers don't support external importmaps).\n\n## Fix\n\nAdd a `Content-Security-Policy` header in `nginx.conf` inside the `server` block (before the location blocks) that allows:\n- Scripts from `'self'` and `https://cdn.jsdelivr.net`\n- The inline importmap via hash: `'sha256-Cb7VRvgKHYvwTusy6WvuTr1ww8fUTjYTnEACYzG5a/8='`\n- Inline styles via `'unsafe-inline'` (the page has an inline `<style>` block)\n\nAdd this line inside the `server { }` block, before the `location` directives:\n\n```nginx\nadd_header Content-Security-Policy \"script-src 'self' https://cdn.jsdelivr.net 'sha256-Cb7VRvgKHYvwTusy6WvuTr1ww8fUTjYTnEACYzG5a/8='; style-src 'self' 'unsafe-inline'; default-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self';\" always;\n```\n\n## Verification\n\n- Run `docker build -t teeter .` — must succeed (nginx -t validates config)\n- The CSP header should appear in HTTP responses\n\n## Conventions\n- Match existing nginx.conf indentation (4 spaces)\n- Keep the change minimal — only add the CSP header line\n\n## IMPORTANT\n- Do NOT modify index.html\n- Do NOT change the importmap content (changing it would invalidate the hash)\n- The hash `sha256-Cb7VRvgKHYvwTusy6WvuTr1ww8fUTjYTnEACYzG5a/8=` has been verified against the exact importmap content",
+      "claudeMd": "# Fix CSP Inline Script Block\n\nYou are fixing a CSP (Content Security Policy) issue that prevents the game from loading.\n\n## Codebase\n\nPure static HTML+JS served by nginx in Docker. No npm, no build step.\n\n- `index.html` \u2014 Main page with inline `<style>`, inline `<script type=\"importmap\">`, and external module `<script type=\"module\" src=\"js/main.js\">`\n- `nginx.conf` \u2014 Nginx config serving on port 8080\n- `Dockerfile` \u2014 Docker build\n\n## Problem\n\nA CSP directive `script-src 'self' https://cdn.jsdelivr.net` blocks the inline `<script type=\"importmap\">`. The importmap MUST remain inline (browsers don't support external importmaps).\n\n## Fix\n\nAdd a `Content-Security-Policy` header in `nginx.conf` inside the `server` block (before the location blocks) that allows:\n- Scripts from `'self'` and `https://cdn.jsdelivr.net`\n- The inline importmap via hash: `'sha256-Cb7VRvgKHYvwTusy6WvuTr1ww8fUTjYTnEACYzG5a/8='`\n- Inline styles via `'unsafe-inline'` (the page has an inline `<style>` block)\n\nAdd this line inside the `server { }` block, before the `location` directives:\n\n```nginx\nadd_header Content-Security-Policy \"script-src 'self' https://cdn.jsdelivr.net 'sha256-Cb7VRvgKHYvwTusy6WvuTr1ww8fUTjYTnEACYzG5a/8='; style-src 'self' 'unsafe-inline'; default-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self';\" always;\n```\n\n## Verification\n\n- Run `docker build -t teeter .` \u2014 must succeed (nginx -t validates config)\n- The CSP header should appear in HTTP responses\n\n## Conventions\n- Match existing nginx.conf indentation (4 spaces)\n- Keep the change minimal \u2014 only add the CSP header line\n\n## IMPORTANT\n- Do NOT modify index.html\n- Do NOT change the importmap content (changing it would invalidate the hash)\n- The hash `sha256-Cb7VRvgKHYvwTusy6WvuTr1ww8fUTjYTnEACYzG5a/8=` has been verified against the exact importmap content",
       "checklist": [
         {
           "id": "t1",
@@ -16,7 +16,7 @@
             "Add Content-Security-Policy header with sha256 hash inside server block",
             "Verify nginx config syntax via docker build"
           ],
-          "passes": false
+          "passes": true
         },
         {
           "id": "t2",
@@ -25,7 +25,7 @@
             "Run docker build -t teeter .",
             "Verify build completes without errors (nginx -t passes)"
           ],
-          "passes": false
+          "passes": true
         }
       ],
       "quality_checklist": [
@@ -37,7 +37,7 @@
             "Check that style-src allows inline styles",
             "Verify no overly permissive directives like 'unsafe-eval'"
           ],
-          "passes": false
+          "passes": true
         }
       ]
     }
@@ -52,7 +52,7 @@
     "checks": [
       {
         "id": "v1",
-        "description": "Game loads without CSP errors — the loading screen progresses past 'Loading...' and the 3D scene renders",
+        "description": "Game loads without CSP errors \u2014 the loading screen progresses past 'Loading...' and the 3D scene renders",
         "steps": [
           "Open http://localhost:8080 in browser",
           "Verify no CSP violation errors in console",
