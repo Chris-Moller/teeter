@@ -1,0 +1,78 @@
+{
+  "quality": "skip",
+  "tasks": [
+    {
+      "id": "main",
+      "title": "Remove incorrect tiltAngle negation in main.js",
+      "description": "The previous fix commits (7e20238, 45c9040) incorrectly added a negation to tiltAngle when passing it to updatePhysics(). This inverted the head tilt controls. The fix is to remove the '-' prefix from '-tiltAngle' in the updatePhysics() call in both public/js/main.js (line 387) and js/main.js (line 301), reverting to just 'tiltAngle'.",
+      "acceptance_criteria": "The updatePhysics() call in both public/js/main.js and js/main.js passes 'tiltAngle' (not '-tiltAngle') as the second argument. When the user tilts their head left, the ball moves left; when they tilt right, the ball moves right.",
+      "claudeMd": "# Fix Inverted Head Tilt Controls\n\nYou are fixing a two-character bug in two files. The head tilt controls are inverted because a prior commit incorrectly added a negation.\n\n## What to Change\n\n### File 1: `public/js/main.js` (PRODUCTION — this is the file served to users)\nLine 387: change `const result = updatePhysics(dt, -tiltAngle, pitch, mouthOpen);` to `const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);`\n\n### File 2: `js/main.js` (DEVELOPMENT COPY — keep in sync with public/)\nLine 301: change `const result = updatePhysics(dt, -tiltAngle, pitch, mouthOpen);` to `const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);`\n\n## Why This Is Correct\n\nThe sign chain for 'head left → ball left' requires an even number of negations:\n- tracker.js:96 negates once: `rawTilt = -(faceX - calibrationOffset)`\n- physics.js:98 negates once: `targetVLateral = -tiltAngle * DIRECT_SENSITIVITY`\n- Track geometry: positive lateral = track right = screen left (one more effective negation)\n\nWith 3 negations total, the result is inverted. Removing the main.js negation gives 2, which is correct.\n\n## Conventions\n- No build step. Files are served as-is from `public/`.\n- Commit with: `fix(controls): remove incorrect tiltAngle negation to fix inverted head tilt`\n- Stage specific files only: `git add public/js/main.js js/main.js`",
+      "checklist": [
+        {
+          "id": "t1",
+          "description": "Remove negation from tiltAngle in public/js/main.js updatePhysics call",
+          "steps": [
+            "Open public/js/main.js",
+            "Find line 387: `const result = updatePhysics(dt, -tiltAngle, pitch, mouthOpen);`",
+            "Change to: `const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);`",
+            "Verify no other references to -tiltAngle exist in the file"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t2",
+          "description": "Remove negation from tiltAngle in js/main.js updatePhysics call",
+          "steps": [
+            "Open js/main.js",
+            "Find line 301: `const result = updatePhysics(dt, -tiltAngle, pitch, mouthOpen);`",
+            "Change to: `const result = updatePhysics(dt, tiltAngle, pitch, mouthOpen);`",
+            "Verify no other references to -tiltAngle exist in the file"
+          ],
+          "passes": false
+        },
+        {
+          "id": "t3",
+          "description": "Verify both files are consistent and commit",
+          "steps": [
+            "Run: grep -n 'updatePhysics' public/js/main.js js/main.js",
+            "Confirm both show 'tiltAngle' without negation",
+            "Stage and commit: git add public/js/main.js js/main.js && git commit -m 'fix(controls): remove incorrect tiltAngle negation to fix inverted head tilt'"
+          ],
+          "passes": false
+        }
+      ],
+      "quality_checklist": [
+        {
+          "id": "q1",
+          "description": "No stray negations remain in the tilt pipeline",
+          "steps": [
+            "Grep for '-tiltAngle' in both main.js files — should find zero matches",
+            "Verify tracker.js and physics.js are unchanged"
+          ],
+          "passes": false
+        }
+      ]
+    }
+  ],
+  "integration": null,
+  "verification": {
+    "buildCommand": "echo 'No build step'",
+    "runCommand": "node server.js",
+    "readySignal": "running on port",
+    "appType": "web",
+    "port": 8080,
+    "checks": [
+      {
+        "id": "v1",
+        "description": "Verify tiltAngle is passed without negation to updatePhysics in both main.js files",
+        "steps": [
+          "Run: grep 'updatePhysics' public/js/main.js js/main.js",
+          "Confirm both lines show 'tiltAngle' (not '-tiltAngle') as the second argument",
+          "Start app with 'node server.js'",
+          "Verify app loads at http://localhost:8080 without errors"
+        ],
+        "passes": false
+      }
+    ]
+  }
+}
